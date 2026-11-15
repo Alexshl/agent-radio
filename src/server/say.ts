@@ -1,5 +1,5 @@
 // Airing a spoken message: shared by POST /api/say (agent key) and "send test to air" (browser).
-import { and, eq, gte, sql } from 'drizzle-orm'
+import { and, eq, gte, isNull, ne, or, sql } from 'drizzle-orm'
 import { patchMessage } from './delivery'
 import type { FullDeps } from './deps'
 import { messages, type users } from './db/schema'
@@ -9,6 +9,10 @@ import { getSetting } from './lib/settings'
 import type { StationRow } from './stations'
 
 type UserRow = typeof users.$inferSelect
+
+// a message that was put on air again from the history (Пульт): hidden from "last messages", not counted into the hourly limit
+export const REPLAY_NOTE = 'replay'
+export const notReplay = or(isNull(messages.note), ne(messages.note, REPLAY_NOTE))
 
 const SESSION_WORD: Record<string, string> = { uk: 'Сесія', ru: 'Сессия', en: 'Session' }
 
@@ -25,7 +29,7 @@ export function checkHourlyLimit(deps: FullDeps, userId: string) {
     deps.db
       .select({ n: sql<number>`count(*)` })
       .from(messages)
-      .where(and(eq(messages.userId, userId), gte(messages.createdAt, since)))
+      .where(and(eq(messages.userId, userId), gte(messages.createdAt, since), notReplay))
       .get()?.n ?? 0
   if (n >= limit) throw new HttpError(429, 'user_limit', 'Hourly message limit reached', { 'Retry-After': '600' })
 }

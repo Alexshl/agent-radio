@@ -109,7 +109,7 @@ function initialTab(r: Radio): Tab {
   return r.presets.some((p) => p.url === src.url) ? 'stations' : 'url'
 }
 
-function useSetSource() {
+export function useSetSource() {
   const qc = useQueryClient()
   const toast = useToast()
   const fail = useErrorToast()
@@ -437,7 +437,7 @@ function PhoneCard({ r }: { r: Radio }) {
 }
 
 // Range slider with a live value in mono; the change is sent 300 ms after the last movement and applies on air at once.
-function LevelSlider({
+export function LevelSlider({
   id,
   label,
   min,

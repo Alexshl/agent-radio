@@ -13,6 +13,8 @@ export interface PlayerApi extends PlayerState {
   resume: () => void
   stop: () => void
   seek: (seconds: number) => void
+  // live stream: jump to the newest audio
+  goLive: () => void
   setVolume: (v: number) => void
   setMuted: (m: boolean) => void
   isPlaying: (key: string) => boolean
@@ -40,6 +42,7 @@ const Ctx = createContext<PlayerApi>({
   resume: noop,
   stop: noop,
   seek: noop,
+  goLive: noop,
   setVolume: noop,
   setMuted: noop,
   isPlaying: () => false,
@@ -90,6 +93,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       resume: () => c()?.resume(),
       stop: () => c()?.stop(),
       seek: (t) => c()?.seek(t),
+      goLive: () => c()?.goLive(),
       setVolume: (v) => c()?.setVolume(v),
       setMuted: (m) => c()?.setMuted(m),
       isPlaying: (key) => state.current?.key === key && state.playing,

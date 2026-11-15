@@ -189,6 +189,13 @@ export class PlayerController {
     })
   }
 
+  // Jumps a live stream to its newest audio: the stream is simply opened again (a live mp3 has nothing to seek in).
+  goLive() {
+    if (this.state.current?.kind !== 'live') return
+    this.clearRetry()
+    this.reopen()
+  }
+
   private clearRetry() {
     if (this.retryTimer) this.timers.clear(this.retryTimer)
     this.retryTimer = null
