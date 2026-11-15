@@ -41,6 +41,11 @@ export interface Timers {
 export const RECONNECT_DELAYS_MS = [1000, 2000, 5000]
 export const RECONNECT_EVERY_MS = 10_000
 export const RECONNECT_GIVE_UP_MS = 5 * 60_000
+// an external pause of a live stream (a system interruption, e.g. iOS dictation or a call): the first resume attempt after
+// INTERRUPT_FIRST_MS, then every INTERRUPT_EVERY_MS; given up after INTERRUPT_GIVE_UP_MS
+export const INTERRUPT_FIRST_MS = 1500
+export const INTERRUPT_EVERY_MS = 3000
+export const INTERRUPT_GIVE_UP_MS = 15 * 60_000
 // a 'stalled' event only counts when the stream shows no progress for this long
 export const STALL_GRACE_MS = 8000
 // "stay at the live edge": every EDGE_CHECK_MS a live stream that is more than EDGE_MAX_LAG_S behind (a backlog kept by the browser or an
@@ -70,6 +75,12 @@ export interface AudioLike {
   load(): void
   removeAttribute(name: string): void
   addEventListener(type: string, listener: () => void): void
+}
+
+// the page events the controller listens to (document and window); injectable for tests
+export interface PageEvents {
+  doc: { visibilityState?: string; addEventListener(type: string, listener: () => void): void } | null
+  win: { addEventListener(type: string, listener: () => void): void } | null
 }
 
 export interface StorageLike {
@@ -111,12 +122,24 @@ export class PlayerController {
   private needFresh = false
   private attempts = 0
   private droppedAt = 0
+  // a live stream was paused by the system (not by the user): we keep trying to resume it at the live edge
+  private interrupted = false
+  private interruptedAt = 0
+  private resumeAttempts = 0
+  private resumeTimer: unknown = null
+  // the token of the reopen started by the resume loop (it is in flight while it equals `token`)
+  private attemptToken = -1
+  private audioSessionSet = false
   onError: ((source: PlayerSource) => void) | null = null
 
   constructor(
     private audio: AudioLike,
     private storage: StorageLike | null = null,
     private timers: Timers = { set: (fn, ms) => setTimeout(fn, ms), clear: (id) => clearTimeout(id as never), now: () => Date.now() },
+    events: PageEvents = {
+      doc: typeof document === 'undefined' ? null : document,
+      win: typeof window === 'undefined' ? null : window,
+    },
   ) {
     const v = loadVolume(storage)
     this.state = {
@@ -148,14 +171,18 @@ export class PlayerController {
       this.watchEdge()
     })
     on('play', () => {
-      if (!this.state.current || this.state.reconnecting) return
+      if (!this.state.current) return
       if (this.needFresh && this.state.current.kind === 'live') return this.reopen()
+      if (this.state.reconnecting) return
       this.set({ playing: true })
     })
     on('pause', () => {
       if (!this.state.current) return
       // our own pause()/stop()/start() already cleared `playing`: only a pause from outside finds a playing live stream
-      if (this.state.playing && this.state.current.kind === 'live') this.needFresh = true
+      if (this.state.playing && this.state.current.kind === 'live') {
+        this.needFresh = true
+        return this.interrupt()
+      }
       this.set({ playing: false })
     })
     on('waiting', () => this.state.current && this.set({ loading: true }))
@@ -187,6 +214,62 @@ export class PlayerController {
         this.stallTimer = null
       }
     })
+    // back on screen / focus / network / bfcache restore: an interrupted stream is resumed at once (the system gave the audio back)
+    const visible = () => events.doc?.visibilityState !== 'hidden'
+    events.doc?.addEventListener('visibilitychange', () => visible() && this.recover())
+    events.win?.addEventListener('online', () => this.recover())
+    events.win?.addEventListener('focus', () => this.resumeNow())
+    events.win?.addEventListener('pageshow', () => this.resumeNow())
+  }
+
+  // The pause button of the lock screen / Control Center / headset (Media Session pause and stop actions): always the user's intent,
+  // never auto-resumed. A live stream is closed, a file is paused.
+  userPause() {
+    if (this.state.current?.kind === 'live') this.stop()
+    else this.pause()
+  }
+
+  // A live stream was paused by the system: keep the source wanted ("reconnecting") and try to resume it.
+  private interrupt() {
+    if (this.edgeTimer) this.timers.clear(this.edgeTimer)
+    this.edgeTimer = null
+    this.interrupted = true
+    this.interruptedAt = this.timers.now()
+    this.resumeAttempts = 0
+    this.set({ playing: false, loading: true, reconnecting: true })
+    this.scheduleResume()
+  }
+
+  private scheduleResume() {
+    if (!this.interrupted || this.resumeTimer) return
+    if (this.timers.now() - this.interruptedAt > INTERRUPT_GIVE_UP_MS) {
+      // a normal paused state now: play re-opens the stream fresh (needFresh stays set)
+      this.interrupted = false
+      this.set({ playing: false, loading: false, reconnecting: false })
+      return
+    }
+    const delay = this.resumeAttempts === 0 ? INTERRUPT_FIRST_MS : INTERRUPT_EVERY_MS
+    this.resumeAttempts++
+    this.resumeTimer = this.timers.set(() => {
+      this.resumeTimer = null
+      this.resumeNow()
+    }, delay)
+  }
+
+  // one resume attempt of the interruption loop (not while the previous one is still pending)
+  private resumeNow() {
+    if (!this.interrupted || this.state.current?.kind !== 'live') return
+    if (this.attemptToken === this.token) return
+    if (this.resumeTimer) this.timers.clear(this.resumeTimer)
+    this.resumeTimer = null
+    this.reopen()
+    this.attemptToken = this.token
+  }
+
+  private endInterruption() {
+    this.interrupted = false
+    if (this.resumeTimer) this.timers.clear(this.resumeTimer)
+    this.resumeTimer = null
   }
 
   // Jumps a live stream to its newest audio: the stream is simply opened again (a live mp3 has nothing to seek in).
@@ -203,6 +286,7 @@ export class PlayerController {
     this.stallTimer = null
     if (this.edgeTimer) this.timers.clear(this.edgeTimer)
     this.edgeTimer = null
+    this.endInterruption()
   }
 
   // seconds the live audio is behind the end of what the browser has downloaded
@@ -244,7 +328,7 @@ export class PlayerController {
   // The live stream broke (server restart, network): keep the source, show "reconnecting" and try again with a growing pause.
   private dropped() {
     const cur = this.state.current
-    if (cur?.kind !== 'live' || this.retryTimer) return
+    if (cur?.kind !== 'live' || this.retryTimer || this.interrupted) return
     if (!this.state.reconnecting) {
       this.droppedAt = this.timers.now()
       this.attempts = 0
@@ -275,10 +359,17 @@ export class PlayerController {
     this.audio.load()
     this.audio.play().then(
       () => {
-        if (token === this.token) this.set({ playing: true, loading: false, reconnecting: false })
+        if (token !== this.token) return
+        this.attemptToken = -1
+        this.endInterruption()
+        this.set({ playing: true, loading: false, reconnecting: false })
       },
       () => {
-        if (token === this.token) this.dropped()
+        if (token !== this.token) return
+        this.attemptToken = -1
+        // the system may still hold the audio (NotAllowedError / AbortError): an interruption keeps trying
+        if (this.interrupted) this.scheduleResume()
+        else this.dropped()
       },
     )
   }
@@ -288,6 +379,7 @@ export class PlayerController {
   recover() {
     const cur = this.state.current
     if (cur?.kind !== 'live') return
+    if (this.interrupted) return this.resumeNow()
     if (this.state.playing || this.state.loading || this.state.reconnecting || !this.audio.paused) {
       this.clearRetry()
       this.reopen()
@@ -327,6 +419,7 @@ export class PlayerController {
     this.audio.pause()
     this.audio.src = source.src
     this.needFresh = false
+    if (source.kind === 'live') this.openPlaybackSession()
     this.set({ current: source, playing: false, loading: true, position: 0, duration: 0, reconnecting: false, lag: 0 })
     this.audio.play().then(
       () => {
@@ -338,6 +431,18 @@ export class PlayerController {
         this.onError?.(source)
       },
     )
+  }
+
+  // iOS Safari 16.4+: a 'playback' session is not muted by the silent switch and is the one that resumes after an interruption
+  private openPlaybackSession() {
+    if (this.audioSessionSet) return
+    this.audioSessionSet = true
+    try {
+      const session = (globalThis.navigator as { audioSession?: { type: string } } | undefined)?.audioSession
+      if (session) session.type = 'playback'
+    } catch {
+      // not supported
+    }
   }
 
   pause() {
