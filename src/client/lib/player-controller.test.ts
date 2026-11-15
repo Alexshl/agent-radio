@@ -1,5 +1,15 @@
-import { describe, expect, it, vi } from 'vitest'
-import { type AudioLike, EDGE_CHECK_MS, LAG_SHOW_S, PlayerController, type PlayerSource, VOLUME_KEY } from './player-controller'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  type AudioLike,
+  EDGE_CHECK_MS,
+  INTERRUPT_EVERY_MS,
+  INTERRUPT_FIRST_MS,
+  INTERRUPT_GIVE_UP_MS,
+  LAG_SHOW_S,
+  PlayerController,
+  type PlayerSource,
+  VOLUME_KEY,
+} from './player-controller'
 
 class FakeAudio implements AudioLike {
   src = ''
@@ -19,9 +29,15 @@ class FakeAudio implements AudioLike {
   }
   playCalls = 0
   fail = false
+  // the next N play() calls reject (an interruption still holds the audio)
+  failTimes = 0
   private handlers = new Map<string, (() => void)[]>()
   play() {
     this.playCalls++
+    if (this.failTimes > 0) {
+      this.failTimes--
+      return Promise.reject(new DOMException('interrupted', 'NotAllowedError'))
+    }
     if (this.fail) return Promise.reject(new Error('NotSupportedError'))
     this.paused = false
     return Promise.resolve()
@@ -297,11 +313,12 @@ describe('PlayerController', () => {
       audio.emit('timeupdate')
       expect(next()).toBeNull()
       expect(ctl.getState().reconnecting).toBe(false)
-      audio.emit('stalled')
-      audio.paused = false
-      ctl.getState().playing && audio.emit('pause')
-      expect(next()).toBe(8000)
-      expect(ctl.getState().reconnecting).toBe(true)
+      // a stream that never got going (play() still pending) and stalls
+      const t = makeTimed()
+      t.ctl.toggle(live)
+      t.audio.emit('stalled')
+      expect(t.next()).toBe(8000)
+      expect(t.ctl.getState().reconnecting).toBe(true)
     })
   })
 
@@ -534,5 +551,196 @@ describe('PlayerController live edge', () => {
     audio.emit('play')
     expect(audio.playCalls).toBe(calls)
     expect(audio.src).toBe('/stream/x.mp3')
+  })
+
+  describe('auto-resume after a system interruption', () => {
+    class FakePage {
+      private handlers = new Map<string, (() => void)[]>()
+      visibilityState = 'visible'
+      addEventListener(type: string, fn: () => void) {
+        this.handlers.set(type, [...(this.handlers.get(type) ?? []), fn])
+      }
+      emit(type: string) {
+        for (const fn of this.handlers.get(type) ?? []) fn()
+      }
+    }
+
+    function makeInterruptible() {
+      vi.useFakeTimers()
+      vi.setSystemTime(1_000_000)
+      const audio = new FakeAudio()
+      const doc = new FakePage()
+      const win = new FakePage()
+      const timers = {
+        set: (fn: () => void, ms: number) => setTimeout(fn, ms),
+        clear: (id: unknown) => clearTimeout(id as never),
+        now: () => Date.now(),
+      }
+      const ctl = new PlayerController(audio, null, timers, { doc, win })
+      return { audio, doc, win, ctl }
+    }
+
+    async function startLive(src: PlayerSource = live) {
+      const t = makeInterruptible()
+      t.ctl.toggle(src)
+      await vi.advanceTimersByTimeAsync(0)
+      t.audio.emit('playing')
+      return t
+    }
+
+    const interrupt = (audio: FakeAudio) => {
+      audio.paused = true
+      audio.emit('pause')
+    }
+
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    it('an external pause of live resumes by itself with a fresh URL, the source stays wanted', async () => {
+      const { ctl, audio } = await startLive()
+      interrupt(audio)
+      expect(ctl.getState()).toMatchObject({ current: { key: 'live' }, playing: false, reconnecting: true })
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(INTERRUPT_FIRST_MS - 1)
+      expect(audio.playCalls).toBe(calls)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(audio.playCalls).toBe(calls + 1)
+      expect(audio.src).toMatch(/^\/stream\/x\.mp3\?_r=\d+$/)
+      expect(ctl.getState()).toMatchObject({ playing: true, loading: false, reconnecting: false })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(audio.playCalls).toBe(calls + 1)
+    })
+
+    it('keeps trying when play() rejects twice, then succeeds', async () => {
+      const { ctl, audio } = await startLive()
+      interrupt(audio)
+      audio.failTimes = 2
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(INTERRUPT_FIRST_MS)
+      expect(audio.playCalls).toBe(calls + 1)
+      expect(ctl.getState()).toMatchObject({ playing: false, reconnecting: true })
+      await vi.advanceTimersByTimeAsync(INTERRUPT_EVERY_MS)
+      expect(audio.playCalls).toBe(calls + 2)
+      await vi.advanceTimersByTimeAsync(INTERRUPT_EVERY_MS)
+      expect(audio.playCalls).toBe(calls + 3)
+      expect(ctl.getState()).toMatchObject({ playing: true, reconnecting: false })
+    })
+
+    it('a user pause (stop) does not auto-resume', async () => {
+      const { ctl, audio } = await startLive()
+      ctl.stop()
+      interrupt(audio)
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(audio.playCalls).toBe(calls)
+      expect(ctl.getState().current).toBeNull()
+    })
+
+    it('a Media Session pause does not auto-resume, also when it arrives after the pause event', async () => {
+      const { ctl, audio } = await startLive()
+      interrupt(audio)
+      ctl.userPause()
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(audio.playCalls).toBe(calls)
+      expect(ctl.getState()).toMatchObject({ reconnecting: false, playing: false })
+
+      const b = await startLive()
+      b.ctl.userPause()
+      interrupt(b.audio)
+      const c = b.audio.playCalls
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(b.audio.playCalls).toBe(c)
+    })
+
+    it('a user stop while the loop runs cancels it', async () => {
+      const { ctl, audio } = await startLive()
+      interrupt(audio)
+      audio.failTimes = 5
+      await vi.advanceTimersByTimeAsync(INTERRUPT_FIRST_MS)
+      const calls = audio.playCalls
+      ctl.stop()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(audio.playCalls).toBe(calls)
+    })
+
+    it('a file source is never auto-resumed', async () => {
+      const { ctl, audio } = makeInterruptible()
+      ctl.toggle(track('1'))
+      await vi.advanceTimersByTimeAsync(0)
+      audio.emit('playing')
+      interrupt(audio)
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(audio.playCalls).toBe(calls)
+      expect(ctl.getState()).toMatchObject({ playing: false, reconnecting: false })
+    })
+
+    it('gives up after 15 minutes: a normal paused state, play re-opens fresh', async () => {
+      const { ctl, audio } = await startLive()
+      interrupt(audio)
+      audio.failTimes = 1_000_000
+      await vi.advanceTimersByTimeAsync(INTERRUPT_GIVE_UP_MS + 10_000)
+      expect(ctl.getState()).toMatchObject({ current: { key: 'live' }, playing: false, loading: false, reconnecting: false })
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(audio.playCalls).toBe(calls)
+      audio.failTimes = 0
+      ctl.resume()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(audio.src).toMatch(/_r=\d+$/)
+      expect(ctl.getState().playing).toBe(true)
+    })
+
+    it('visibilitychange to visible, focus, online and pageshow try at once; hidden does not', async () => {
+      for (const [target, type] of [
+        ['doc', 'visibilitychange'],
+        ['win', 'focus'],
+        ['win', 'online'],
+        ['win', 'pageshow'],
+      ] as const) {
+        const t = await startLive()
+        interrupt(t.audio)
+        t.audio.failTimes = 1
+        const calls = t.audio.playCalls
+        if (target === 'doc') {
+          t.doc.visibilityState = 'hidden'
+          t.doc.emit(type)
+          expect(t.audio.playCalls).toBe(calls)
+          t.doc.visibilityState = 'visible'
+        }
+        t[target].emit(type)
+        expect(t.audio.playCalls).toBe(calls + 1)
+        // the attempt is still pending: a second event does not pile up another one
+        t[target].emit(type)
+        expect(t.audio.playCalls).toBe(calls + 1)
+        await vi.advanceTimersByTimeAsync(0)
+        await vi.advanceTimersByTimeAsync(INTERRUPT_EVERY_MS)
+        expect(t.ctl.getState().playing).toBe(true)
+        t.ctl.stop()
+      }
+    })
+
+    it('sets the playback audio session once, only for live', async () => {
+      const session = { type: 'auto' }
+      vi.stubGlobal('navigator', { audioSession: session })
+      const { ctl } = makeInterruptible()
+      ctl.toggle(track('1'))
+      expect(session.type).toBe('auto')
+      ctl.toggle(live)
+      expect(session.type).toBe('playback')
+    })
+
+    it('survives a missing or throwing navigator.audioSession', async () => {
+      vi.stubGlobal('navigator', {
+        get audioSession() {
+          throw new Error('nope')
+        },
+      })
+      const { ctl } = makeInterruptible()
+      expect(() => ctl.toggle(live)).not.toThrow()
+    })
   })
 })

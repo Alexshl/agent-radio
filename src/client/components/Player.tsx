@@ -100,17 +100,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [state])
 
-  // back in the foreground / network back: re-open a dropped live stream at once
-  useEffect(() => {
-    const recover = () => document.visibilityState !== 'hidden' && ctl.current?.recover()
-    document.addEventListener('visibilitychange', recover)
-    window.addEventListener('online', recover)
-    return () => {
-      document.removeEventListener('visibilitychange', recover)
-      window.removeEventListener('online', recover)
-    }
-  }, [])
-
   // room for the bar below the page content
   useEffect(() => {
     document.body.classList.toggle('has-player', !!state.current)
@@ -137,7 +126,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     const c = () => ctl.current
     set('play', () => c()?.resume())
-    set('pause', () => (cur.kind === 'live' ? c()?.stop() : c()?.pause()))
+    set('pause', () => c()?.userPause())
     set('stop', () => c()?.stop())
     if (cur.kind === 'live') {
       set('seekto', null)
