@@ -297,3 +297,63 @@ describe('/api/say with the cloud fallback (route level)', () => {
     expect(bad).toMatchObject({ ok: false, error: 'quota' })
   })
 })
+
+describe('Latin words for voices that drop them', () => {
+  const MIXED = 'Я закоммитил PR в GitHub, deploy прошёл'
+  const spy = (r: ReturnType<typeof service>['registry']) => vi.spyOn(r.piper, 'synthesize').mockResolvedValue('/p.wav')
+
+  it('ru piper voice: Latin becomes Russian letters, the rest is untouched', async () => {
+    const { registry, svc } = service()
+    const piper = spy(registry)
+    await svc.synthesize({ text: MIXED, voice: 'piper:ru_RU-dmitri-medium', lang: 'ru' }, 'out')
+    expect(piper.mock.calls[0]?.[0].text).toBe('Я закоммитил ПР в Гитуб, деплой прошёл')
+    await svc.synthesize({ text: 'OCARINA DREAM OPERA', voice: 'piper:ru_RU-dmitri-medium', lang: 'ru' }, 'out')
+    expect(piper.mock.calls[1]?.[0].text).toBe('ОКАРИНА ДРИМ ОПЕРА')
+  })
+
+  it('uk piper voice: Ukrainian letters', async () => {
+    const { registry, svc } = service()
+    const piper = spy(registry)
+    await svc.synthesize({ text: 'Я закомітив PR в GitHub, deploy пройшов', voice: 'piper:uk_UA-mykyta-high', lang: 'uk' }, 'out')
+    expect(piper.mock.calls[0]?.[0].text).toBe('Я закомітив ПР в Гітуб, деплой пройшов')
+    await svc.synthesize({ text: 'Eddy Smith', voice: 'piper:uk_UA-mykyta-high', lang: 'uk' }, 'out')
+    expect(piper.mock.calls[1]?.[0].text).toBe('Едді Сміт')
+  })
+
+  it('the language of the voice decides, not the message language', async () => {
+    const { registry, svc } = service()
+    const piper = spy(registry)
+    await svc.synthesize({ text: 'Hello Bob', voice: 'piper:en_US-lessac-medium', lang: 'ru' }, 'out')
+    expect(piper.mock.calls[0]?.[0].text).toBe('Hello Bob')
+  })
+
+  it('a cloud voice reads Latin itself: the text is unchanged', async () => {
+    const { registry, secrets, svc } = service()
+    await secrets.put('tts.azure.key', 'k')
+    const azure = vi.spyOn(registry.provider('azure'), 'synthesize').mockResolvedValue('/a.mp3')
+    await svc.synthesize({ text: MIXED, voice: 'azure:ru-RU-SvetlanaNeural', lang: 'ru' }, 'out')
+    expect(azure.mock.calls[0]?.[0].text).toBe(MIXED)
+  })
+
+  it('silero ru (local sidecar) gets Cyrillic only', async () => {
+    const { registry, svc } = service()
+    const info = {
+      id: 'silero',
+      label: 'Silero',
+      lang: 'ru',
+      license: 'x',
+      status: 'ready',
+      error: '',
+      nativeRate: true,
+      voices: [{ id: 'kseniya', label: 'Ksenia', lang: 'ru' }],
+    }
+    vi.spyOn(registry.local, 'engines').mockResolvedValue([info] as never)
+    await registry.refreshLocal()
+    registry.setVoiceEnabled('local:silero', true)
+    const local = vi.spyOn(registry.local, 'synthesize').mockResolvedValue('/l.wav')
+    await svc.synthesize({ text: 'OCARINA DREAM OPERA — The enduring flame', voice: 'local:silero/kseniya', lang: 'ru' }, 'out')
+    const text = local.mock.calls[0]?.[0].text as string
+    expect(text).not.toMatch(/[A-Za-z]/)
+    expect(text).toMatch(/^ОКАРИНА ДРИМ ОПЕРА — Зе /)
+  })
+})

@@ -7,8 +7,10 @@ import type { Config } from '../config'
 import type { Db } from '../db/client'
 import { newId } from '../lib/ids'
 import { prepareSpeech, stressTarget } from './pronunciation'
+import { latinTarget, latinToCyrillic } from './translit'
 import { loadEntries } from './pronunciation-store'
 import type { TtsRegistry } from './registry'
+import type { ProviderId } from './voices'
 
 export type { TtsProvider, TtsRequest } from './types'
 export { TtsRegistry } from './registry'
@@ -98,10 +100,19 @@ export class TtsService {
     const choice = this.registry.choose(req.voice, req.lang)
     // pronunciation dictionary + the stress syntax of the chosen engine (one place for every caller)
     const entries = this.db ? loadEntries(this.db, req.userId) : []
-    const speak = (target: ReturnType<typeof stressTarget>) => prepareSpeech(req.text, entries, req.lang, target)
+    // a voice that drops Latin words gets them in Cyrillic (by the language of the voice, not of the interface)
+    const voiceLang = (c: { provider: ProviderId; voice: string | null }) => {
+      const info = c.voice ? this.registry.findVoice?.(`${c.provider}:${c.voice}`) : undefined
+      return info && info.lang !== 'multi' ? info.lang : req.lang
+    }
+    const speak = (target: ReturnType<typeof stressTarget>, c: { provider: ProviderId; voice: string | null }) => {
+      const text = prepareSpeech(req.text, entries, req.lang, target)
+      const to = latinTarget(c.provider, c.voice, voiceLang(c))
+      return to ? latinToCyrillic(text, to) : text
+    }
     try {
       const provider = this.registry.provider(choice.provider)
-      const text = speak(stressTarget(choice.provider, choice.voice))
+      const text = speak(stressTarget(choice.provider, choice.voice), choice)
       const file = await provider.synthesize({ text, voice: choice.voice, lang: req.lang, rate: req.rate }, outBase)
       return await applyTempo(file, req.rate, provider.nativeRate === true, outBase)
     } catch (e) {
@@ -110,7 +121,7 @@ export class TtsService {
       const fb = this.registry.fallback(req.lang)
       return await this.registry
         .provider('piper')
-        .synthesize({ text: speak('plain'), voice: fb.voice, lang: req.lang, rate: req.rate }, outBase)
+        .synthesize({ text: speak('plain', fb), voice: fb.voice, lang: req.lang, rate: req.rate }, outBase)
     }
   }
 

@@ -13,6 +13,7 @@ import { newId } from '../lib/ids'
 import { engineTrackPath } from '../music'
 import { getPlaylist } from '../playlists'
 import { type StationRow, parseSource, stationOfUser, withStationLock } from '../stations'
+import type { SongPreparer } from './prepare'
 import { LEARN_EVERY, type LearnPlayRow, OPEN_STATUSES, closeOpenPlays, skipFlags } from './plays'
 
 // the engine forgets a clip it never heard of (restart): queue again after this
@@ -96,7 +97,12 @@ export class LearnScheduler {
 
   constructor(
     private deps: Part,
-    private opts: { now?: () => number; rng?: () => number; introTimeoutMs?: number } = {},
+    private opts: {
+      now?: () => number
+      rng?: () => number
+      introTimeoutMs?: number
+      prep?: Pick<SongPreparer, 'getNotes' | 'ensurePrepared'>
+    } = {},
   ) {}
 
   private now = () => (this.opts.now ?? Date.now)()
@@ -307,7 +313,10 @@ export class LearnScheduler {
       .where(eq(stations.id, st.id))
       .run()
     let clip: string | null = null
-    if (withIntro) clip = await this.makeIntro(user, track)
+    // the prepared spoken intro when the notes are ready, else the plain "artist - title"
+    const notes = withIntro ? this.opts.prep?.getNotes(track.id, user.lang) : null
+    if (withIntro) clip = await this.makeIntro(user, notes?.introText || introText(track))
+    this.prefetch(user, pl, order, bag)
     const row = this.newRow(user.id, st.id, track.id, clip, 1)
     try {
       await this.pushRow(st, row, introText(track))
@@ -318,13 +327,28 @@ export class LearnScheduler {
     }
   }
 
-  // "<artist> — <title>" in the user's voice and language; null on any failure (no intro)
-  private async makeIntro(user: UserRow, track: Track): Promise<string | null> {
+  // starts preparing the song after this one (peeks into the bag without advancing it), so that it is ready about one song later
+  private prefetch(user: UserRow, pl: ReturnType<typeof getPlaylist>, order: 'shuffle' | 'ordered', bag: Bag) {
+    const prep = this.opts.prep
+    if (!prep) return
+    // a new shuffle round is drawn at random: nothing to peek at
+    if (order === 'shuffle' && !bag.ids.some((id) => pl.tracks.some((t) => t.id === id))) return
+    try {
+      const next = drawTrack(bag, pl.id, order, pl.tracks, () => 0).track
+      if (skipFlags(this.deps.db, user.id, [next.id]).has(next.id)) return
+      void prep.ensurePrepared(next.id, user.lang).catch(() => {})
+    } catch {
+      // nothing to prefetch
+    }
+  }
+
+  // the intro text in the user's voice and language; null on any failure (no intro)
+  private async makeIntro(user: UserRow, text: string): Promise<string | null> {
     const { tts } = this.deps
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const clip = tts.makeClip({
-        text: introText(track),
+        text,
         voice: user.voice,
         lang: user.lang,
         chime: false,

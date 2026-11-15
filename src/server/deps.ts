@@ -6,6 +6,9 @@ import { Airing } from './airing'
 import { Delivery } from './delivery'
 import { ListenerTracker } from './listeners'
 import { Library } from './library'
+import { LrcLibClient } from './learn/lrclib'
+import { LlmService } from './learn/llm'
+import { SongPreparer } from './learn/prepare'
 import { RateLimiter } from './lib/rate-limit'
 import { SecretStore, getAppSecret } from './lib/secrets'
 import { UserLock } from './lib/user-lock'
@@ -39,6 +42,9 @@ export interface Deps {
   // recent-listener grace (lastListenerSeenAt) and the confirmation of what was pushed to the engine
   listeners?: ListenerTracker
   delivery?: Delivery
+  // learn mode: the AI model and the lyrics / notes preparation
+  llm?: LlmService
+  learnPrep?: SongPreparer
 }
 
 export type FullDeps = Required<Deps>
@@ -47,8 +53,11 @@ export function withDefaults(d: Deps): FullDeps {
   const airing = d.airing ?? new Airing()
   const listeners = d.listeners ?? new ListenerTracker(d.db, d.icecast)
   const secrets = new SecretStore(d.db, () => getAppSecret(d.config))
+  const llm = d.llm ?? new LlmService(d.db, d.config, secrets, d.fetchImpl)
   return {
     ...d,
+    llm,
+    learnPrep: d.learnPrep ?? new SongPreparer(d.db, llm, new LrcLibClient(d.fetchImpl)),
     // 10 login attempts per IP + email per 15 minutes
     authLimiter: d.authLimiter ?? new RateLimiter(10, 15 * 60_000),
     media: d.media ?? new FfmpegMedia(d.config.ffmpegBin, d.config.ffprobeBin),

@@ -11,7 +11,7 @@ import type { Lang } from '../i18n'
 import { Shell } from '../layouts/Shell'
 import { fmtBytes, fmtDate, fmtDb, fmtRate, fmtWhen, initials } from '../lib/format'
 
-type Tab = 'users' | 'tts' | 'lib' | 'presets' | 'server'
+type Tab = 'users' | 'tts' | 'llm' | 'lib' | 'presets' | 'server'
 const WHEN = { today: S.common.today, yesterday: S.common.yesterday, never: S.common.never }
 
 interface AdminUser {
@@ -468,6 +468,172 @@ function ProviderRow({ p, voices }: { p: TtsData['providers'][number]; voices: T
           </div>
         </form>
       )}
+    </div>
+  )
+}
+
+interface LlmData {
+  provider: string
+  model: string
+  webSearch: boolean
+  dailyLimit: number
+  usage: { calls: number; tokensIn: number; tokensOut: number; cap: number }
+  localUrl: string
+  providers: { id: string; label: string; hasKey: boolean; configured: boolean }[]
+}
+
+function LlmTab() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const fail = useErrorToast()
+  const q = useQuery({ queryKey: ['admin-llm'], queryFn: () => get<LlmData>('/admin/llm') })
+  const [provider, setProvider] = useState('')
+  const [model, setModel] = useState('')
+  const [url, setUrl] = useState('')
+  const [limit, setLimit] = useState('')
+  const [key, setKey] = useState('')
+  useEffect(() => {
+    if (!q.data) return
+    setProvider(q.data.provider)
+    setModel(q.data.model)
+    setUrl(q.data.localUrl)
+    setLimit(String(q.data.dailyLimit))
+  }, [q.data])
+  const models = useQuery({
+    queryKey: ['admin-llm-models', provider, q.data?.providers.find((p) => p.id === provider)?.configured, q.data?.localUrl],
+    queryFn: () => get<{ models: string[] }>(`/admin/llm/${provider}/models`),
+    enabled: !!provider && !!q.data?.providers.find((p) => p.id === provider)?.configured,
+  })
+  const refresh = () => qc.invalidateQueries({ queryKey: ['admin-llm'] })
+  const saveM = useMutation({
+    mutationFn: async () => {
+      if (key) await put(`/admin/llm/${provider}/key`, { key })
+      await put('/admin/llm', {
+        provider,
+        model: model || undefined,
+        dailyLimit: Number(limit) >= 0 && limit !== '' ? Number(limit) : undefined,
+        localUrl: provider === 'local' && url ? url : undefined,
+      })
+    },
+    onSuccess: () => {
+      setKey('')
+      refresh()
+      qc.invalidateQueries({ queryKey: ['admin-llm-models'] })
+    },
+    onError: fail,
+  })
+  const removeM = useMutation({ mutationFn: () => del(`/admin/llm/${provider}/key`), onSuccess: refresh, onError: fail })
+  const webM = useMutation({ mutationFn: (v: boolean) => put('/admin/llm', { webSearch: v }), onSuccess: refresh, onError: fail })
+  const testM = useMutation({
+    mutationFn: () => post<{ ok: boolean; ms?: number; error?: string }>('/admin/llm/test'),
+    onSuccess: (r) => (r.ok ? toast(S.admin.llm.testOk(r.ms ?? 0)) : toast(`${S.admin.llm.testFail}: ${r.error ?? ''}`, 'danger')),
+    onError: fail,
+  })
+  if (q.isLoading) return <Loading />
+  if (q.isError || !q.data) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />
+  const cur = q.data.providers.find((p) => p.id === provider)
+  const isLocal = provider === 'local'
+  return (
+    <div className="ar-two">
+      <section className="card">
+        <div className="card-h">{S.admin.llm.title}</div>
+        <form
+          className="card-b stack"
+          style={{ gap: 12 }}
+          onSubmit={(e) => {
+            e.preventDefault()
+            saveM.mutate()
+          }}
+        >
+          <div className="muted" style={{ fontSize: 12.5 }}>
+            {S.admin.llm.hint}
+          </div>
+          <div className="field">
+            <label htmlFor="llm-provider">{S.admin.llm.provider}</label>
+            <select id="llm-provider" className="inp" value={provider} onChange={(e) => setProvider(e.target.value)}>
+              {q.data.providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <div className="row" style={{ gap: 8 }}>
+              <span className={`bdg${cur?.configured ? ' t-success' : ''}`}>
+                {cur?.configured ? S.admin.tts.connected : S.admin.tts.notConfigured}
+              </span>
+            </div>
+          </div>
+          {isLocal && (
+            <div className="field">
+              <label htmlFor="llm-url">{S.admin.llm.baseUrl}</label>
+              <input id="llm-url" className="inp mono" value={url} onChange={(e) => setUrl(e.target.value)} />
+              <span className="msg muted">{S.admin.llm.baseUrlHint}</span>
+            </div>
+          )}
+          <div className="field">
+            <label htmlFor="llm-key">{S.admin.llm.apiKey}</label>
+            <input
+              id="llm-key"
+              className="inp mono"
+              type="password"
+              autoComplete="off"
+              placeholder={cur?.hasKey ? '••••••••' : ''}
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+            />
+            <span className="msg muted">
+              {cur?.hasKey ? `${S.admin.llm.keySet}. ` : ''}
+              {S.admin.llm.keyHint}
+            </span>
+          </div>
+          <div className="field">
+            <label htmlFor="llm-model">{S.admin.llm.model}</label>
+            <input id="llm-model" className="inp mono" list="llm-models" value={model} onChange={(e) => setModel(e.target.value)} />
+            <datalist id="llm-models">
+              {(models.data?.models ?? []).map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+            <span className="msg muted">{S.admin.llm.modelHint}</span>
+          </div>
+          <div className="field">
+            <label htmlFor="llm-limit">{S.admin.llm.dailyLimit}</label>
+            <input id="llm-limit" className="inp mono" type="number" min={0} value={limit} onChange={(e) => setLimit(e.target.value)} />
+            <span className="msg muted">{S.admin.llm.usage(q.data.usage.calls, q.data.usage.cap)}</span>
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button type="submit" className="btn primary sm" disabled={saveM.isPending}>
+              {S.admin.llm.save}
+            </button>
+            <button type="button" className="btn sm" disabled={testM.isPending} onClick={() => testM.mutate()}>
+              {testM.isPending ? S.admin.llm.testing : S.admin.llm.test}
+            </button>
+            {cur?.hasKey && (
+              <button type="button" className="btn sm danger" onClick={() => removeM.mutate()}>
+                {S.admin.llm.removeKey}
+              </button>
+            )}
+          </div>
+        </form>
+      </section>
+      <section className="card">
+        <div className="card-b stack" style={{ gap: 12 }}>
+          <div className="row between" style={{ gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 550 }}>{S.admin.llm.webSearch}</div>
+              <div className="muted" style={{ fontSize: 12 }}>
+                {S.admin.llm.webSearchHint}
+              </div>
+            </div>
+            <Switch
+              on={q.data.webSearch}
+              onChange={(v) => webM.mutate(v)}
+              label={S.admin.llm.webSearch}
+              disabled={q.data.provider !== 'anthropic'}
+            />
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
@@ -1278,7 +1444,7 @@ function ServerTab() {
 export function Admin() {
   const [tab, setTab] = useState<Tab>('users')
   const server = useQuery({ queryKey: ['admin-server'], queryFn: () => get<ServerInfo>('/admin/server'), refetchInterval: 10_000 })
-  const tabs: Tab[] = ['users', 'tts', 'lib', 'presets', 'server']
+  const tabs: Tab[] = ['users', 'tts', 'llm', 'lib', 'presets', 'server']
   return (
     <Shell crumb={S.nav.admin}>
       <PageHead
@@ -1303,6 +1469,7 @@ export function Admin() {
       </div>
       {tab === 'users' && <UsersTab />}
       {tab === 'tts' && <TtsTab />}
+      {tab === 'llm' && <LlmTab />}
       {tab === 'lib' && <LibTab />}
       {tab === 'presets' && <PresetsTab />}
       {tab === 'server' && <ServerTab />}

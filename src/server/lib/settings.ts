@@ -23,6 +23,14 @@ export const DEFAULTS = {
   'tts.azure.region': 'westeurope',
   'tts.openai.model': 'gpt-4o-mini-tts',
   'tts.gemini.model': 'gemini-3.8-flash-tts',
+  // learn mode: the AI model (admin section "ИИ-модели"); the base URL of `local` is null = LEARN_LLM_URL
+  'learn.provider': 'local',
+  'learn.model': 'gemma4-e4b',
+  'learn.webSearch': false,
+  'learn.dailyLlmCalls': 200,
+  'learn.localUrl': null as string | null,
+  // model calls made today (UTC day) and their tokens
+  'learn.usage': { day: '', calls: 0, tokensIn: 0, tokensOut: 0 },
 }
 export type SettingKey = keyof typeof DEFAULTS
 
