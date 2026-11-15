@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type AudioLike,
   EDGE_CHECK_MS,
-  INTERRUPT_EVERY_MS,
   INTERRUPT_FIRST_MS,
   INTERRUPT_GIVE_UP_MS,
   LAG_SHOW_S,
@@ -598,36 +597,35 @@ describe('PlayerController live edge', () => {
       vi.unstubAllGlobals()
     })
 
-    it('an external pause of live resumes by itself with a fresh URL, the source stays wanted', async () => {
+    it('an external pause of live waits (shown paused) and never resumes on a timer; play re-opens at the live edge', async () => {
       const { ctl, audio } = await startLive()
       interrupt(audio)
-      expect(ctl.getState()).toMatchObject({ current: { key: 'live' }, playing: false, reconnecting: true })
+      expect(ctl.getState()).toMatchObject({ current: { key: 'live' }, playing: false, reconnecting: false, loading: false })
       const calls = audio.playCalls
-      await vi.advanceTimersByTimeAsync(INTERRUPT_FIRST_MS - 1)
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
       expect(audio.playCalls).toBe(calls)
-      await vi.advanceTimersByTimeAsync(1)
+      ctl.resume()
+      await vi.advanceTimersByTimeAsync(0)
       expect(audio.playCalls).toBe(calls + 1)
       expect(audio.src).toMatch(/^\/stream\/x\.mp3\?_r=\d+$/)
-      expect(ctl.getState()).toMatchObject({ playing: true, loading: false, reconnecting: false })
-      await vi.advanceTimersByTimeAsync(60_000)
-      expect(audio.playCalls).toBe(calls + 1)
-    })
-
-    it('keeps trying when play() rejects twice, then succeeds', async () => {
-      const { ctl, audio } = await startLive()
-      interrupt(audio)
-      audio.failTimes = 2
-      const calls = audio.playCalls
-      await vi.advanceTimersByTimeAsync(INTERRUPT_FIRST_MS)
-      expect(audio.playCalls).toBe(calls + 1)
-      expect(ctl.getState()).toMatchObject({ playing: false, reconnecting: true })
-      await vi.advanceTimersByTimeAsync(INTERRUPT_EVERY_MS)
-      expect(audio.playCalls).toBe(calls + 2)
-      await vi.advanceTimersByTimeAsync(INTERRUPT_EVERY_MS)
-      expect(audio.playCalls).toBe(calls + 3)
       expect(ctl.getState()).toMatchObject({ playing: true, reconnecting: false })
     })
-
+    it('a refused resume stays paused and does not retry on its own', async () => {
+      const { ctl, win, audio } = await startLive()
+      interrupt(audio)
+      audio.failTimes = 1
+      const calls = audio.playCalls
+      win.emit('focus')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(audio.playCalls).toBe(calls + 1)
+      expect(ctl.getState()).toMatchObject({ playing: false, reconnecting: false })
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(audio.playCalls).toBe(calls + 1)
+      win.emit('focus')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(audio.playCalls).toBe(calls + 2)
+      expect(ctl.getState().playing).toBe(true)
+    })
     it('a user pause (stop) does not auto-resume', async () => {
       const { ctl, audio } = await startLive()
       ctl.stop()
@@ -717,7 +715,10 @@ describe('PlayerController live edge', () => {
         t[target].emit(type)
         expect(t.audio.playCalls).toBe(calls + 1)
         await vi.advanceTimersByTimeAsync(0)
-        await vi.advanceTimersByTimeAsync(INTERRUPT_EVERY_MS)
+        // refused once: stays paused until the next signal
+        expect(t.ctl.getState().playing).toBe(false)
+        t[target].emit(type)
+        await vi.advanceTimersByTimeAsync(0)
         expect(t.ctl.getState().playing).toBe(true)
         t.ctl.stop()
       }

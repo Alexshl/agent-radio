@@ -41,8 +41,8 @@ export interface Timers {
 export const RECONNECT_DELAYS_MS = [1000, 2000, 5000]
 export const RECONNECT_EVERY_MS = 10_000
 export const RECONNECT_GIVE_UP_MS = 5 * 60_000
-// an external pause of a live stream (a system interruption, e.g. iOS dictation or a call): the first resume attempt after
-// INTERRUPT_FIRST_MS, then every INTERRUPT_EVERY_MS; given up after INTERRUPT_GIVE_UP_MS
+// an external pause of a live stream (a system interruption, e.g. iOS dictation or a call) is NOT resumed on a timer (that broke
+// dictation); returning to the tab resumes it within INTERRUPT_GIVE_UP_MS. INTERRUPT_FIRST_MS / _EVERY_MS are kept for compatibility.
 export const INTERRUPT_FIRST_MS = 1500
 export const INTERRUPT_EVERY_MS = 3000
 export const INTERRUPT_GIVE_UP_MS = 15 * 60_000
@@ -125,7 +125,6 @@ export class PlayerController {
   // a live stream was paused by the system (not by the user): we keep trying to resume it at the live edge
   private interrupted = false
   private interruptedAt = 0
-  private resumeAttempts = 0
   private resumeTimer: unknown = null
   // the token of the reopen started by the resume loop (it is in flight while it equals `token`)
   private attemptToken = -1
@@ -235,30 +234,25 @@ export class PlayerController {
     this.edgeTimer = null
     this.interrupted = true
     this.interruptedAt = this.timers.now()
-    this.resumeAttempts = 0
-    this.set({ playing: false, loading: true, reconnecting: true })
-    this.scheduleResume()
+    // shown as paused: nothing resumes by itself while the system holds the audio (iOS dictation breaks if the radio comes back
+    // mid-sentence). Play (page, lock screen, headset) or coming back to the tab re-opens it at the live edge.
+    this.set({ playing: false, loading: false, reconnecting: false })
   }
 
+  // a resume attempt was refused (the system still holds the audio): stay paused, the next user signal tries again
   private scheduleResume() {
-    if (!this.interrupted || this.resumeTimer) return
-    if (this.timers.now() - this.interruptedAt > INTERRUPT_GIVE_UP_MS) {
-      // a normal paused state now: play re-opens the stream fresh (needFresh stays set)
-      this.interrupted = false
-      this.set({ playing: false, loading: false, reconnecting: false })
-      return
-    }
-    const delay = this.resumeAttempts === 0 ? INTERRUPT_FIRST_MS : INTERRUPT_EVERY_MS
-    this.resumeAttempts++
-    this.resumeTimer = this.timers.set(() => {
-      this.resumeTimer = null
-      this.resumeNow()
-    }, delay)
+    if (!this.interrupted) return
+    this.set({ playing: false, loading: false, reconnecting: false })
   }
 
   // one resume attempt of the interruption loop (not while the previous one is still pending)
   private resumeNow() {
     if (!this.interrupted || this.state.current?.kind !== 'live') return
+    if (this.timers.now() - this.interruptedAt > INTERRUPT_GIVE_UP_MS) {
+      // long ago: coming back to the tab does not start the radio by itself any more (play re-opens it fresh)
+      this.interrupted = false
+      return
+    }
     if (this.attemptToken === this.token) return
     if (this.resumeTimer) this.timers.clear(this.resumeTimer)
     this.resumeTimer = null
