@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DIAG_KEY, Diag, type DiagEnv, FLUSH_MS, diagEnabled, resumeOnActiveEnabled } from './diag'
+import { DIAG_KEY, Diag, FLAGS_DEFAULT_ON, type DiagEnv, FLUSH_MS, diagEnabled, resumeOnActiveEnabled } from './diag'
 
 class Page {
   handlers = new Map<string, (() => void)[]>()
@@ -53,7 +53,7 @@ function make(sessionOn = true) {
 describe('diag flags', () => {
   it('?diag=1 sets the flag, ?diag=0 clears it, the stored flag works alone', () => {
     const s = store()
-    expect(diagEnabled('', s)).toBe(false)
+    expect(diagEnabled('', s)).toBe(FLAGS_DEFAULT_ON)
     expect(diagEnabled('?diag=1', s)).toBe(true)
     expect(s.getItem(DIAG_KEY)).toBe('1')
     expect(diagEnabled('', s)).toBe(true)
@@ -62,10 +62,12 @@ describe('diag flags', () => {
   })
   it('resumeOnActive is a separate flag', () => {
     const s = store()
-    expect(resumeOnActiveEnabled('?diag=1', s)).toBe(false)
+    expect(resumeOnActiveEnabled('?diag=0', s)).toBe(FLAGS_DEFAULT_ON)
+    expect(resumeOnActiveEnabled('?resumeOnActive=0', s)).toBe(false)
+    expect(diagEnabled('', s)).toBe(FLAGS_DEFAULT_ON)
     expect(resumeOnActiveEnabled('?resumeOnActive=1', s)).toBe(true)
+    expect(diagEnabled('?diag=0', s)).toBe(false)
     expect(resumeOnActiveEnabled('', s)).toBe(true)
-    expect(diagEnabled('', s)).toBe(false)
   })
 })
 

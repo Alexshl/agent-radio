@@ -36,20 +36,24 @@ export interface DiagEnv {
 }
 
 // a flag in the URL (?name=1 / ?name=0) wins and is remembered; otherwise the stored value decides
-export function readFlag(search: string, storage: StorageLike | null, param: string, key: string): boolean {
+// TEMPORARY (iOS dictation investigation, 2026-11-15): both flags default to ON for everyone; ?name=0 opts out. Set back to false after.
+export const FLAGS_DEFAULT_ON = true
+
+export function readFlag(search: string, storage: StorageLike | null, param: string, key: string, defaultOn = FLAGS_DEFAULT_ON): boolean {
   const fromUrl = new URLSearchParams(search).get(param)
   try {
     if (fromUrl === '1') storage?.setItem(key, '1')
-    else if (fromUrl === '0') storage?.removeItem(key)
+    else if (fromUrl === '0') storage?.setItem(key, '0')
   } catch {
     // storage blocked
   }
   if (fromUrl === '1') return true
   if (fromUrl === '0') return false
   try {
-    return storage?.getItem(key) === '1'
+    const v = storage?.getItem(key)
+    return v == null ? defaultOn : v === '1'
   } catch {
-    return false
+    return defaultOn
   }
 }
 
