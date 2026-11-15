@@ -81,6 +81,8 @@ export interface AudioLike {
 export interface PageEvents {
   doc: { visibilityState?: string; addEventListener(type: string, listener: () => void): void } | null
   win: { addEventListener(type: string, listener: () => void): void } | null
+  // navigator.audioSession (Safari 16.4+): its 'statechange' to 'active' means the system gave the audio back
+  session?: { state?: string; addEventListener(type: string, listener: () => void): void } | null
 }
 
 export interface StorageLike {
@@ -130,6 +132,10 @@ export class PlayerController {
   private attemptToken = -1
   private audioSessionSet = false
   onError: ((source: PlayerSource) => void) | null = null
+  // diagnostics hook (lib/diag.ts): interrupt() / resumeNow() report here
+  onTrace: ((type: string, data?: Record<string, unknown>) => void) | null = null
+  // experimental: an audioSession change to 'active' while interrupted resumes the stream at once (off by default)
+  resumeOnActive = false
 
   constructor(
     private audio: AudioLike,
@@ -138,6 +144,7 @@ export class PlayerController {
     events: PageEvents = {
       doc: typeof document === 'undefined' ? null : document,
       win: typeof window === 'undefined' ? null : window,
+      session: (globalThis.navigator as { audioSession?: PageEvents['session'] } | undefined)?.audioSession ?? null,
     },
   ) {
     const v = loadVolume(storage)
@@ -219,6 +226,10 @@ export class PlayerController {
     events.win?.addEventListener('online', () => this.recover())
     events.win?.addEventListener('focus', () => this.resumeNow())
     events.win?.addEventListener('pageshow', () => this.resumeNow())
+    const session = events.session
+    session?.addEventListener('statechange', () => {
+      if (this.resumeOnActive && this.interrupted && session.state === 'active') this.resumeNow()
+    })
   }
 
   // The pause button of the lock screen / Control Center / headset (Media Session pause and stop actions): always the user's intent,
@@ -233,6 +244,7 @@ export class PlayerController {
     if (this.edgeTimer) this.timers.clear(this.edgeTimer)
     this.edgeTimer = null
     this.interrupted = true
+    this.onTrace?.('interrupt')
     this.interruptedAt = this.timers.now()
     // shown as paused: nothing resumes by itself while the system holds the audio (iOS dictation breaks if the radio comes back
     // mid-sentence). Play (page, lock screen, headset) or coming back to the tab re-opens it at the live edge.
@@ -248,6 +260,7 @@ export class PlayerController {
   // one resume attempt of the interruption loop (not while the previous one is still pending)
   private resumeNow() {
     if (!this.interrupted || this.state.current?.kind !== 'live') return
+    this.onTrace?.('resumeNow')
     if (this.timers.now() - this.interruptedAt > INTERRUPT_GIVE_UP_MS) {
       // long ago: coming back to the tab does not start the radio by itself any more (play re-opens it fresh)
       this.interrupted = false

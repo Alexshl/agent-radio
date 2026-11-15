@@ -11,6 +11,7 @@ import { SUMMARY_LANGS } from '../lang'
 import { createApiKey, listApiKeys, revokeApiKey } from '../lib/api-keys'
 import { controlTokenInfo, issueControlToken, revokeControlToken } from '../lib/control-token'
 import { csrfGuard, requireSession } from '../lib/auth'
+import { DIAG_MAX_BODY, appendDiag, diagBody, tailDiag } from '../lib/diag'
 import { SecretStore, getAppSecret } from '../lib/secrets'
 import { RateLimiter } from '../lib/rate-limit'
 import { HttpError, badRequest, notFound } from '../lib/http'
@@ -478,6 +479,28 @@ export function appRoutes(deps: FullDeps) {
       if (clip) rmSync(clip, { force: true })
     }
   })
+
+  // ---- player diagnostics (iOS dictation research): events are kept per user, read back by the same user only ----
+
+  r.post('/diag', async (c) => {
+    const user = c.get('user')
+    const raw = await c.req.text()
+    if (new TextEncoder().encode(raw).length > DIAG_MAX_BODY) {
+      return c.json({ error: 'payload_too_large', message: 'Request body is too large' }, 413)
+    }
+    let json: unknown
+    try {
+      json = JSON.parse(raw)
+    } catch {
+      json = null
+    }
+    const body = diagBody.safeParse(json)
+    if (!body.success) throw badRequest('invalid_body', 'Expected {events: [{t, type, data?}]} (max 100)')
+    appendDiag(config.dataDir, user.id, body.data.events, c.req.header('user-agent') ?? '')
+    return c.json({ ok: true, count: body.data.events.length })
+  })
+
+  r.get('/diag', (c) => c.json({ events: tailDiag(config.dataDir, c.get('user').id) }))
 
   // "Повторить в эфир": the last 1-3 messages (or one by id) go back on air in the user's own stream
   r.post('/history/replay', async (c) => {

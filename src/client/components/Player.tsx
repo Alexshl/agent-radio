@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { S } from '../i18n'
+import { diagRecord, resumeOnActiveEnabled, startDiag } from '../lib/diag'
 import { PlayerController, type PlayerSource, type PlayerState } from '../lib/player-controller'
 import { PlayerBar } from './PlayerBar'
 import { useToast } from './Toast'
@@ -73,6 +74,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
       ctl.current = new PlayerController(ref.current, storage)
       ctl.current.onError = () => toast(S.player.error, 'danger')
+      const diag = startDiag(ref.current)
+      if (diag) ctl.current.onTrace = diag.record
+      ctl.current.resumeOnActive = resumeOnActiveEnabled(window.location.search, storage)
     }
     return ctl.current
   }, [toast])
@@ -119,7 +123,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     ms.metadata = new MediaMetadata({ title: cur.title, artist: cur.subtitle ?? '', album: S.appName })
     const set = (action: MediaSessionAction, fn: MediaSessionActionHandler | null) => {
       try {
-        ms.setActionHandler(action, fn)
+        ms.setActionHandler(
+          action,
+          fn &&
+            ((d) => {
+              diagRecord('mediaSession', { action })
+              return fn(d)
+            }),
+        )
       } catch {
         // an action this browser does not know
       }
