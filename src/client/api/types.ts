@@ -59,6 +59,7 @@ export interface Radio {
     webStreamPath: string
   }
   settings: { voice: string | null; lang: string; speakSession: boolean; speechRate: number }
+  learn: LearnSettings
   allowOwnUrls: boolean
   defaultVoice: string
   presets: Preset[]
@@ -101,4 +102,66 @@ export interface ReplayResult {
 export interface ControlTokenInfo {
   createdAt: string
   lastUsedAt: string | null
+}
+
+export interface LearnSettings {
+  mode: boolean
+  every: number
+  available: boolean
+  configured: boolean
+  lang: string
+  processed: number
+  total: number
+}
+export interface LearnLine {
+  ms: number | null
+  orig: string
+  tr: string | null
+}
+export interface LearnLyrics {
+  status: string
+  origLang: string | null
+  synced: boolean
+  lines: LearnLine[]
+}
+export interface LearnHook {
+  orig: string
+  tr: string | null
+}
+export interface LearnNow {
+  serverNowMs: number
+  play: { trackId: string; artist: string; title: string; startedAtMs: number | null; state: 'playing' | 'intro' } | null
+  lyrics: LearnLyrics | null
+  notes: { summary: string; hooks: LearnHook[]; intro: string | null } | null
+  skip: boolean
+}
+export interface LearnArchiveSong {
+  trackId: string
+  title: string
+  artist: string
+  lang: string | null
+  lastPlayedAt: string
+  plays: number
+}
+export interface LearnArchive {
+  songs: LearnArchiveSong[]
+  total: number
+  all: number
+  langs: { lang: string; count: number }[]
+  nextCursor: string | null
+}
+export interface LearnSong {
+  trackId: string
+  artist: string
+  title: string
+  plays: number
+  lastPlayedAt: string
+  skip: boolean
+  lang: string | null
+  targetLang: string
+  summary: string | null
+  hooks: LearnHook[]
+  intro: string | null
+  lyrics: LearnLyrics
+  credits: { lyrics: string | null; model: string | null }
 }

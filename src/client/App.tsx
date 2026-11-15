@@ -3,6 +3,7 @@ import { AcceptLink, Login, RequireAuth } from './pages/Auth'
 import { Admin } from './pages/Admin'
 import { Connect } from './pages/Connect'
 import { History } from './pages/History'
+import { Learn } from './pages/Learn'
 import { Library } from './pages/Library'
 import { Pronunciation } from './pages/Pronunciation'
 import { RadioPage } from './pages/Radio'
@@ -36,6 +37,22 @@ export function App() {
         element={
           <RequireAuth>
             <Library />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/learn"
+        element={
+          <RequireAuth>
+            <Learn />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/learn/:trackId"
+        element={
+          <RequireAuth>
+            <Learn />
           </RequireAuth>
         }
       />

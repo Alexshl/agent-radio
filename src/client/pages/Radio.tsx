@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, FolderOpen, Info, Music, Pause, Play, Radio as RadioIcon, Settings2, Volume2 } from 'lucide-react'
+import { BookOpen, Copy, FolderOpen, Info, Music, Pause, Play, Radio as RadioIcon, Settings2, Volume2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { get, patch, post, put } from '../api/client'
 import { useLive, useRadio } from '../api/hooks'
 import type { Live, Radio, Source } from '../api/types'
+import { LyricsPanel } from '../components/LyricsPanel'
 import { LIVE_KEY, usePlayer } from '../components/Player'
 import { Qr } from '../components/Qr'
 import { ReplayButton, useReplay } from '../components/Replay'
@@ -12,6 +13,7 @@ import { useToast } from '../components/Toast'
 import { ErrorBox, Loading, PageHead, Seg, Switch, copyText, useErrorToast } from '../components/ui'
 import { LANGS, LANG_NAMES, S } from '../i18n'
 import { Shell } from '../layouts/Shell'
+import { langName } from '../lib/lang-name'
 import { fmtDb, fmtRate, fmtShortWhen, fmtTime, fmtTotal, fmtWhenInline } from '../lib/format'
 import { firstVoiceFor, voiceMismatch, voicesForLang } from '../lib/voice-lang'
 import { hostOf, liveSource, sourceInfo } from '../lib/source-info'
@@ -639,6 +641,106 @@ function VoiceCard({ r }: { r: Radio }) {
   )
 }
 
+// "Learn a language": a spoken intro before songs of an own playlist, lyrics and translation in the player
+function LearnCard({ r }: { r: Radio }) {
+  const qc = useQueryClient()
+  const fail = useErrorToast()
+  const l = r.learn
+  const save = useMutation({
+    mutationFn: (b: { learnMode?: boolean; learnEvery?: number }) => patch('/app/settings', b),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['radio'] }),
+    onError: fail,
+  })
+  // only turning it on needs a playlist and a model; an enabled mode can always be switched off
+  const blocked = !l.mode && (!l.available || !l.configured)
+  const every = (['1', '2', '3'] as const).includes(String(l.every) as '1') ? (String(l.every) as '1' | '2' | '3') : '1'
+  return (
+    <section className="card">
+      <div className="card-b stack" style={{ gap: 12 }}>
+        <div className="row ln-row" style={{ gap: 12, alignItems: 'flex-start' }}>
+          <BookOpen size={20} aria-hidden="true" style={{ flex: 'none', color: 'var(--brand-primary)', marginTop: 2 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600 }}>{S.learn.title}</div>
+            <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.45, marginTop: 2 }}>
+              {S.learn.settingsHint}
+            </div>
+          </div>
+          <Switch
+            on={l.mode}
+            disabled={blocked || save.isPending}
+            label={S.learn.title}
+            onChange={(learnMode) => save.mutate({ learnMode })}
+          />
+        </div>
+        {!l.available && (
+          <div className="ln-hint" role="note">
+            <Info size={15} aria-hidden="true" />
+            <span>{S.learn.needPlaylist}</span>
+          </div>
+        )}
+        {!l.configured && (
+          <div className="ln-hint" role="note">
+            <Info size={15} aria-hidden="true" />
+            <span>{S.learn.noModel}</span>
+          </div>
+        )}
+        {l.mode && (
+          <div className="ln-sub">
+            <div className="stack" style={{ gap: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 550 }}>{S.learn.every}</div>
+              <Seg
+                className="ln-freq"
+                value={every}
+                label={S.learn.every}
+                options={[
+                  { id: '1', label: S.learn.everyAll },
+                  { id: '2', label: S.learn.everyTwo },
+                  { id: '3', label: S.learn.everyThree },
+                ]}
+                onChange={(v) => save.mutate({ learnEvery: Number(v) })}
+              />
+            </div>
+            <div className="ln-kv">
+              <span className="muted">{S.learn.translateTo}</span>
+              <span>{S.learn.translateValue(langName(l.lang))}</span>
+            </div>
+            <div className="ln-kv">
+              <span className="muted">{S.learn.progress}</span>
+              <span>{S.learn.progressValue(l.processed, l.total)}</span>
+            </div>
+          </div>
+        )}
+        <Link
+          to="/learn"
+          style={{
+            fontSize: 13,
+            fontWeight: 550,
+            color: 'var(--brand-primary)',
+            minHeight: 44,
+            display: 'inline-flex',
+            alignItems: 'center',
+          }}
+        >
+          {S.learn.archiveLink}
+        </Link>
+      </div>
+    </section>
+  )
+}
+
+// the lyrics panel sits in the mobile column or in the desktop one: only one of them is mounted
+function useNarrow() {
+  const q = '(max-width: 760px)'
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches)
+  useEffect(() => {
+    const m = window.matchMedia(q)
+    const fn = () => setNarrow(m.matches)
+    m.addEventListener('change', fn)
+    return () => m.removeEventListener('change', fn)
+  }, [])
+  return narrow
+}
+
 function NowCard({ r, live }: { r: Radio; live?: Live }) {
   const info = sourceInfo(r)
   const last = r.messages[0]
@@ -672,7 +774,7 @@ function NowCard({ r, live }: { r: Radio; live?: Live }) {
   )
 }
 
-function MobileRadio({ r, live }: { r: Radio; live?: Live }) {
+function MobileRadio({ r, live, narrow }: { r: Radio; live?: Live; narrow: boolean }) {
   const player = usePlayer()
   const listening = player.isPlaying(LIVE_KEY)
   const setSource = useSetSource()
@@ -732,6 +834,8 @@ function MobileRadio({ r, live }: { r: Radio; live?: Live }) {
         </div>
       </section>
 
+      <LyricsPanel on={r.learn.mode && narrow} lang={r.learn.lang} />
+
       <div className="lbl">{S.radio.mobileMusic}</div>
       <div className="m-chips">
         {chips.map((c) => (
@@ -766,6 +870,7 @@ function MobileRadio({ r, live }: { r: Radio; live?: Live }) {
         {S.radio.mobileSettings}
       </div>
       <VoiceCard r={r} />
+      <LearnCard r={r} />
       <PhoneCard r={r} />
       <SourceCard key={r.station.id} r={r} />
     </div>
@@ -777,6 +882,7 @@ export function RadioPage() {
   const live = useLive(radio.isSuccess)
   const player = usePlayer()
   const listening = player.isPlaying(LIVE_KEY)
+  const narrow = useNarrow()
   const r = radio.data
   const voice = r?.voices.find((v) => v.key === (r.settings.voice ?? r.defaultVoice))
 
@@ -798,16 +904,18 @@ export function RadioPage() {
               }
             />
           </div>
-          <MobileRadio r={r} live={live.data} />
+          <MobileRadio r={r} live={live.data} narrow={narrow} />
           <div className="ar-grid d-only">
             <div className="stack" style={{ gap: 16 }}>
               <NowCard r={r} live={live.data} />
+              {!narrow && <LyricsPanel on={r.learn.mode} lang={r.learn.lang} />}
               <SourceCard key={r.station.id} r={r} />
               <Messages r={r} />
             </div>
             <div className="stack" style={{ gap: 16 }}>
               <PhoneCard r={r} />
               <VoiceCard r={r} />
+              <LearnCard r={r} />
               <section className="card card-b row between">
                 <div>
                   <div style={{ fontWeight: 600 }}>{S.radio.agents}</div>

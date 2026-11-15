@@ -162,7 +162,7 @@ export function authRoutes(deps: FullDeps) {
   })
 
   r.get('/me', requireSession(db), (c) =>
-    c.json({ user: publicUser(c.get('user')), features: { passkeys: true }, learn: learnView(db, c.get('user')) }),
+    c.json({ user: publicUser(c.get('user')), features: { passkeys: true }, learn: learnView(db, c.get('user'), deps.llm) }),
   )
 
   // Changing the own password needs the current one; other sessions are signed out.

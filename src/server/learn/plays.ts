@@ -5,6 +5,8 @@ import { learnPlays, learnSongPrefs, stations, type users } from '../db/schema'
 import { nowIso } from '../lib/ids'
 import type { FullDeps } from '../deps'
 import { parseSource, setStationSource, withStationLock } from '../stations'
+import type { LlmService } from './llm'
+import { learnProgress } from './view'
 
 export const LEARN_EVERY = [1, 2, 3] as const
 // rows that wait for the engine or are on air
@@ -31,8 +33,16 @@ export function learnAvailable(db: Db, userId: string): boolean {
   return !!st && parseSource(st.source).type === 'userplaylist'
 }
 
-export function learnView(db: Db, user: Pick<typeof users.$inferSelect, 'id' | 'learnMode' | 'learnEvery'>) {
-  return { mode: !!user.learnMode, every: user.learnEvery, available: learnAvailable(db, user.id) }
+// configured: an AI model is set up (without one the mode only gives "artist - title"); lang: the language the notes are written in
+export function learnView(db: Db, user: typeof users.$inferSelect, llm: Pick<LlmService, 'configured'>) {
+  return {
+    mode: !!user.learnMode,
+    every: user.learnEvery,
+    available: learnAvailable(db, user.id),
+    configured: llm.configured(),
+    lang: user.lang,
+    ...learnProgress(db, user),
+  }
 }
 
 export function skipFlags(db: Db, userId: string, trackIds: string[]): Set<string> {

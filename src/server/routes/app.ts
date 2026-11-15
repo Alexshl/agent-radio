@@ -20,6 +20,7 @@ import { serveFile } from '../lib/serve-file'
 import { getSetting } from '../lib/settings'
 import { createPlaylist, deletePlaylist, getPlaylist, listPlaylists, playlistBody, updatePlaylist } from '../playlists'
 import { applyLearnMode, learnAvailable, learnView, setSkip } from '../learn/plays'
+import { learnArchive, learnNow, learnSong } from '../learn/view'
 import { replayBody, replayMessages } from '../replay'
 import { airMessage, notReplay, spokenText } from '../say'
 import { changeSource } from '../source'
@@ -120,7 +121,7 @@ export function appRoutes(deps: FullDeps) {
         ...listenLinks(config, st),
       },
       settings: { voice: user.voice, lang: user.lang, speakSession: user.speakSession, speechRate: user.speechRate },
-      learn: learnView(db, user),
+      learn: learnView(db, user, deps.llm),
       allowOwnUrls: user.role === 'admin' || getSetting(db, 'allowOwnUrls'),
       defaultVoice: registry.defaultVoiceKey(user.lang),
       presets: db.select().from(presets).orderBy(presets.position).all(),
@@ -252,6 +253,24 @@ export function appRoutes(deps: FullDeps) {
     if (!db.select({ id: tracks.id }).from(tracks).where(eq(tracks.id, trackId)).get()) throw notFound('Track not found')
     setSkip(db, c.get('user').id, trackId, body.data.skip)
     return c.json({ ok: true, skip: body.data.skip })
+  })
+
+  // the song on air with its lyrics and notes (the player panel polls it)
+  r.get('/learn/now', (c) => c.json(learnNow(db, c.get('user'))))
+
+  // the songs this user has heard in learn mode
+  r.get('/learn/archive', (c) => {
+    const q = z
+      .object({ cursor: z.string().max(12).optional(), q: z.string().max(200).optional(), lang: z.string().max(12).optional() })
+      .safeParse(c.req.query())
+    if (!q.success) throw badRequest('invalid_query', 'Invalid query')
+    return c.json(learnArchive(db, c.get('user'), q.data))
+  })
+
+  r.get('/learn/songs/:trackId', (c) => {
+    const song = learnSong(db, c.get('user'), c.req.param('trackId'))
+    if (!song) throw notFound('Song not found')
+    return c.json(song)
   })
 
   r.post('/test', async (c) => {
