@@ -10,7 +10,7 @@ import { syncEngine } from './stations'
 const deps = bootstrap()
 const { config } = deps
 
-const learn = new LearnScheduler(deps)
+const learn = new LearnScheduler(deps, { prep: deps.learnPrep })
 
 const admin = await seedAdmin(deps)
 if (admin) console.log(`created admin ${admin.user.email}`)

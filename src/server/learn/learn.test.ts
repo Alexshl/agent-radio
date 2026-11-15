@@ -2,7 +2,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { learnPlays, stations, users } from '../db/schema'
 import type { EngineMsgState } from '../engine/client'
 import { createPlaylist } from '../playlists'
@@ -461,5 +461,55 @@ describe('delivery while an intro plays', () => {
     const r = await t.req('/api/say', { method: 'POST', json: { session: 's', text: 'hi' }, headers: { Authorization: `Bearer ${token}` } })
     expect(r.status).toBe(200)
     expect(t.engine.push).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('LearnScheduler with prepared notes', () => {
+  const notes = (introText: string | null) => ({ pairs: null, summary: 's', introText, hooks: [] as string[] })
+
+  it('speaks intro_script when the notes are ready and the plain "artist - title" otherwise', async () => {
+    const { t } = await ready()
+    const w = world(t)
+    const prep = { getNotes: vi.fn(() => notes('Spoken intro from the model')), ensurePrepared: vi.fn(async () => 'ready' as const) }
+    await new LearnScheduler(t.deps, { now: w.clock, prep }).tick()
+    expect(t.makeClip).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'Spoken intro from the model' }))
+    expect(introPushes(t)).toHaveLength(1)
+
+    const t2 = (await ready()).t
+    const w2 = world(t2)
+    const none = { getNotes: vi.fn(() => null), ensurePrepared: vi.fn(async () => 'error' as const) }
+    await new LearnScheduler(t2.deps, { now: w2.clock, prep: none }).tick()
+    expect(t2.makeClip).toHaveBeenLastCalledWith(expect.objectContaining({ text: expect.stringContaining('Artist — ') }))
+    expect(introPushes(t2)).toHaveLength(1)
+  })
+
+  it('starts preparing the next candidate of the bag without advancing it', async () => {
+    const { t, station } = await ready({ order: 'ordered' })
+    const w = world(t)
+    const prep = { getNotes: vi.fn(() => null), ensurePrepared: vi.fn(async () => 'ready' as const) }
+    await new LearnScheduler(t.deps, { now: w.clock, prep }).tick()
+    const first = rowsOf(t)[0]?.trackId
+    expect(prep.ensurePrepared).toHaveBeenCalledTimes(1)
+    const [nextId, lang] = prep.ensurePrepared.mock.calls[0] as unknown as [string, string]
+    expect(nextId).not.toBe(first)
+    expect(lang).toBe('uk')
+    // the cursor moved by one song only: the prefetched track is the one queued next
+    const bag = JSON.parse(t.db.select().from(stations).where(eq(stations.id, station.id)).get()?.learnBag ?? '{}')
+    expect(bag.cursor).toBe(1)
+    w.set(lastTrackMsg(t), 'playing')
+    await new LearnScheduler(t.deps, { now: w.clock, prep }).tick()
+    expect(rowsOf(t).at(-1)?.trackId === nextId || rowsOf(t).some((r) => r.trackId === nextId)).toBe(true)
+  })
+
+  it('the skip flag still wins over the prepared intro', async () => {
+    const { t, user, trackIds } = await ready({ order: 'ordered' })
+    const { setSkip } = await import('./plays')
+    for (const id of trackIds) setSkip(t.db, user.id, id, true)
+    const w = world(t)
+    const prep = { getNotes: vi.fn(() => notes('Spoken')), ensurePrepared: vi.fn(async () => 'ready' as const) }
+    await new LearnScheduler(t.deps, { now: w.clock, prep }).tick()
+    expect(introPushes(t)).toHaveLength(0)
+    expect(trackPushes(t)).toHaveLength(1)
+    expect(prep.ensurePrepared).not.toHaveBeenCalled()
   })
 })

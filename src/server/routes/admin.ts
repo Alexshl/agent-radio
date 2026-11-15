@@ -17,6 +17,7 @@ import { type SettingKey, getSetting, setSetting } from '../lib/settings'
 import { LEVEL_RANGES, RATE_RANGE, parseSource } from '../stations'
 import { diskSpace, trashTrack } from '../uploads'
 import { createPron, deletePron, listPron, pronBody, pronPatch, pronView, updatePron } from '../tts/pronunciation-store'
+import { LLM_LABEL, LLM_PROVIDERS, LlmError, type LlmProvider, isLlmProvider, llmSecretName } from '../learn/llm'
 import { secretName } from '../tts/registry'
 import { DEFAULT_LANGS, cap, filterLangs } from '../tts/piper-catalog'
 import { PIPER_DEFAULT_BY_LANG, PROVIDER_IDS, PROVIDER_LABEL, type ProviderId } from '../tts/voices'
@@ -211,6 +212,77 @@ export function adminRoutes(deps: FullDeps) {
       })),
       defaultVoice,
     })
+  })
+
+  // ---- AI models (learn mode) ----
+  const { llm } = deps
+
+  const llmState = () => ({
+    provider: llm.provider(),
+    model: llm.model(),
+    webSearch: getSetting(db, 'learn.webSearch'),
+    dailyLimit: getSetting(db, 'learn.dailyLlmCalls'),
+    usage: llm.usage(),
+    localUrl: llm.baseUrl('local'),
+    providers: LLM_PROVIDERS.map((id) => ({ id, label: LLM_LABEL[id], hasKey: llm.hasKey(id), configured: llm.configured(id) })),
+  })
+
+  r.get('/llm', (c) => c.json(llmState()))
+
+  r.put('/llm', async (c) => {
+    const body = z
+      .object({
+        provider: z.enum(LLM_PROVIDERS).optional(),
+        model: z.string().trim().min(1).max(200).optional(),
+        webSearch: z.boolean().optional(),
+        dailyLimit: z.number().int().min(0).max(1_000_000).optional(),
+        localUrl: z
+          .url({ protocol: /^https?$/ })
+          .max(500)
+          .optional(),
+      })
+      .safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body')
+    const b = body.data
+    if (b.provider) setSetting(db, 'learn.provider', b.provider)
+    if (b.model) setSetting(db, 'learn.model', b.model)
+    if (b.webSearch !== undefined) setSetting(db, 'learn.webSearch', b.webSearch)
+    if (b.dailyLimit !== undefined) setSetting(db, 'learn.dailyLlmCalls', b.dailyLimit)
+    if (b.localUrl) setSetting(db, 'learn.localUrl', b.localUrl.replace(/\/+$/, ''))
+    return c.json(llmState())
+  })
+
+  const llmProviderParam = (id: string): LlmProvider => {
+    if (!isLlmProvider(id)) throw notFound('Unknown provider')
+    return id
+  }
+
+  r.put('/llm/:id/key', async (c) => {
+    const id = llmProviderParam(c.req.param('id'))
+    const body = z.object({ key: z.string().trim().min(1).max(500) }).safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body')
+    await llm.secrets.put(llmSecretName(id), body.data.key)
+    return c.json({ ok: true })
+  })
+
+  r.delete('/llm/:id/key', (c) => {
+    llm.secrets.delete(llmSecretName(llmProviderParam(c.req.param('id'))))
+    return c.json({ ok: true })
+  })
+
+  // model ids of the provider (its /models); an empty list = type the name by hand
+  r.get('/llm/:id/models', async (c) => c.json({ models: (await llm.listModels(llmProviderParam(c.req.param('id')))) ?? [] }))
+
+  // a tiny call with the chosen provider and model
+  r.post('/llm/test', async (c) => {
+    const started = Date.now()
+    try {
+      const r = await llm.chatJson('You are a test.', 'Reply with {"ok": true}.', z.object({ ok: z.boolean() }), { maxTokens: 50 })
+      return c.json({ ok: true, ms: Date.now() - started, model: r.model, provider: r.provider })
+    } catch (e) {
+      const error = e instanceof LlmError ? e.message : 'failed'
+      return c.json({ ok: false, error: error.slice(0, 300) }, 200)
+    }
   })
 
   // ---- local neural voices (tts-local sidecar) ----
