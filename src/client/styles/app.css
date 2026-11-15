@@ -702,6 +702,17 @@ body.has-player .ar-main {
   body.has-player .ar-main {
     padding-bottom: calc(76px + 54px);
   }
+  /* segmented controls fill the card width on phones (4 tabs of the music source did not fit) */
+  .card-b > .seg {
+    display: flex;
+  }
+  .seg > * {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 5px 6px;
+    text-align: center;
+    white-space: normal;
+  }
 }
 body.has-player .ar-toasts {
   bottom: 80px;
