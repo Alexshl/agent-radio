@@ -16,7 +16,10 @@ export const useMe = () =>
     staleTime: 60_000,
   })
 
-export const useRadio = () => useQuery({ queryKey: ['radio'], queryFn: () => get<Radio>('/app/radio') })
+// the station state can change from another tab, device or shortcut: refetched when the page comes back to the front, and every
+// `pollMs` on screens that show it as live state (the remote)
+export const useRadio = (pollMs?: number) =>
+  useQuery({ queryKey: ['radio'], queryFn: () => get<Radio>('/app/radio'), refetchOnWindowFocus: true, refetchInterval: pollMs ?? false })
 
 export const useLive = (enabled = true) =>
   useQuery({ queryKey: ['live'], queryFn: () => get<Live>('/app/live'), refetchInterval: 5000, enabled, staleTime: 2000 })

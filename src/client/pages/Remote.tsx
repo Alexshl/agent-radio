@@ -348,7 +348,7 @@ function SourceSection({ r }: { r: Radio }) {
 }
 
 export function Remote() {
-  const radio = useRadio()
+  const radio = useRadio(10_000)
   const live = useLive(radio.isSuccess)
   const player = usePlayer()
   const r = radio.data
