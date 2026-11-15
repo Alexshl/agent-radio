@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { S } from '../i18n'
 import { diagRecord, resumeOnActiveEnabled, startDiag } from '../lib/diag'
-import { PlayerController, type PlayerSource, type PlayerState } from '../lib/player-controller'
+import { getPlayerId, PlayerController, type PlayerSource, type PlayerState } from '../lib/player-controller'
 import { PlayerBar } from './PlayerBar'
 import { useToast } from './Toast'
 
@@ -72,7 +72,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       } catch {
         storage = null
       }
-      ctl.current = new PlayerController(ref.current, storage)
+      let session: Storage | null = null
+      try {
+        session = window.sessionStorage
+      } catch {
+        session = null
+      }
+      ctl.current = new PlayerController(ref.current, storage, undefined, undefined, getPlayerId(session))
       ctl.current.onError = () => toast(S.player.error, 'danger')
       const diag = startDiag(ref.current)
       if (diag) ctl.current.onTrace = diag.record

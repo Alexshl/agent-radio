@@ -18,7 +18,7 @@ export interface ListenerState {
 export class ListenerTracker {
   constructor(
     private db: Db,
-    private icecast: Pick<IcecastApi, 'listeners'>,
+    private icecast: Pick<IcecastApi, 'listeners' | 'reapGhosts'>,
     private now: () => number = () => Date.now(),
     private graceMs = LISTENER_GRACE_MS,
   ) {}
@@ -42,6 +42,9 @@ export class ListenerTracker {
 
   // every station: keeps lastListenerSeenAt fresh even when nobody calls the API
   async observeAll() {
-    for (const st of this.db.select({ id: stations.id }).from(stations).all()) await this.observe(st.id)
+    for (const st of this.db.select({ id: stations.id }).from(stations).all()) {
+      await this.icecast.reapGhosts?.(st.id).catch(() => 0)
+      await this.observe(st.id)
+    }
   }
 }

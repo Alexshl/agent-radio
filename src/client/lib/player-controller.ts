@@ -108,8 +108,35 @@ function loadVolume(storage: StorageLike | null): { volume: number; muted: boole
 }
 
 // a fresh URL on every reconnect: no browser or proxy cache can hand back the dead response
-export function withCacheBust(src: string, n: number): string {
-  return `${src}${src.includes('?') ? '&' : '?'}_r=${n}`
+export function withCacheBust(src: string, n: number, pid: string | null = null): string {
+  const base = withPid(src, pid)
+  return `${base}${base.includes('?') ? '&' : '?'}_r=${n}`
+}
+
+// The player id of this tab: one random id per tab (sessionStorage), sent as `pid=` on every live-stream request. The front passes it on to
+// icecast (User-Agent suffix), so the server counts players, not connections (a Safari tab opens 2 connections per start and reconnects often).
+export const PLAYER_ID_KEY = 'ar-player-id'
+
+export function getPlayerId(storage: StorageLike | null): string {
+  try {
+    const old = storage?.getItem(PLAYER_ID_KEY)
+    if (old && /^[a-z0-9]{6,32}$/.test(old)) return old
+  } catch {
+    // unreadable storage: a fresh id
+  }
+  const bytes = new Uint8Array(8)
+  globalThis.crypto.getRandomValues(bytes)
+  const id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  try {
+    storage?.setItem(PLAYER_ID_KEY, id)
+  } catch {
+    // the id just lives as long as the controller
+  }
+  return id
+}
+
+export function withPid(src: string, pid: string | null): string {
+  return pid ? `${src}${src.includes('?') ? '&' : '?'}pid=${pid}` : src
 }
 
 export class PlayerController {
@@ -131,6 +158,8 @@ export class PlayerController {
   // the token of the reopen started by the resume loop (it is in flight while it equals `token`)
   private attemptToken = -1
   private audioSessionSet = false
+  // reopen() paused a playing element itself: the next 'pause' event is not an interruption
+  private ownPause = false
   onError: ((source: PlayerSource) => void) | null = null
   // diagnostics hook (lib/diag.ts): interrupt() / resumeNow() report here
   onTrace: ((type: string, data?: Record<string, unknown>) => void) | null = null
@@ -146,6 +175,8 @@ export class PlayerController {
       win: typeof window === 'undefined' ? null : window,
       session: (globalThis.navigator as { audioSession?: PageEvents['session'] } | undefined)?.audioSession ?? null,
     },
+    // this tab's player id (getPlayerId); null: no pid on the stream URL
+    private pid: string | null = null,
   ) {
     const v = loadVolume(storage)
     this.state = {
@@ -183,6 +214,10 @@ export class PlayerController {
       this.set({ playing: true })
     })
     on('pause', () => {
+      if (this.ownPause) {
+        this.ownPause = false
+        return
+      }
       if (!this.state.current) return
       // our own pause()/stop()/start() already cleared `playing`: only a pause from outside finds a playing live stream
       if (this.state.playing && this.state.current.kind === 'live') {
@@ -252,6 +287,16 @@ export class PlayerController {
     // shown as paused: nothing resumes by itself while the system holds the audio (iOS dictation breaks if the radio comes back
     // mid-sentence). Play (page, lock screen, headset) or coming back to the tab re-opens it at the live edge.
     this.set({ playing: false, loading: false, reconnecting: false })
+    // close the connection now: the old one would otherwise linger for minutes behind the proxies (a "ghost listener"). Safari's own
+    // auto-resume finds no source then: resumeNow() (audioSession statechange / focus / visible) or play re-opens it.
+    this.release()
+  }
+
+  // Drops the stream connection of the audio element (an element that merely paused keeps downloading until its buffer is full).
+  private release() {
+    this.audio.pause()
+    this.audio.removeAttribute('src')
+    this.audio.load()
   }
 
   // a resume attempt was refused (the system still holds the audio): stay paused, the next user signal tries again
@@ -365,7 +410,10 @@ export class PlayerController {
     const token = ++this.token
     this.needFresh = false
     this.set({ lag: 0 })
-    this.audio.src = withCacheBust(cur.src, this.timers.now())
+    // the previous connection is closed first; this pause is our own (not a system interruption)
+    if (!this.audio.paused) this.ownPause = true
+    this.release()
+    this.audio.src = withCacheBust(cur.src, this.timers.now(), this.pid)
     this.audio.load()
     this.audio.play().then(
       () => {
@@ -427,7 +475,7 @@ export class PlayerController {
     const token = ++this.token
     this.clearRetry()
     this.audio.pause()
-    this.audio.src = source.src
+    this.audio.src = source.kind === 'live' ? withPid(source.src, this.pid) : source.src
     this.needFresh = false
     if (source.kind === 'live') this.openPlaybackSession()
     this.set({ current: source, playing: false, loading: true, position: 0, duration: 0, reconnecting: false, lag: 0 })
