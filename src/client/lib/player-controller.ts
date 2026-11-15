@@ -46,6 +46,8 @@ export const RECONNECT_GIVE_UP_MS = 5 * 60_000
 export const INTERRUPT_FIRST_MS = 1500
 export const INTERRUPT_EVERY_MS = 3000
 export const INTERRUPT_GIVE_UP_MS = 15 * 60_000
+// an audioSession statechange this soon after the interruption is its start (dictation beginning), never its end
+export const SESSION_START_WINDOW_MS = 2000
 // a 'stalled' event only counts when the stream shows no progress for this long
 export const STALL_GRACE_MS = 8000
 // "stay at the live edge": every EDGE_CHECK_MS a live stream that is more than EDGE_MAX_LAG_S behind (a backlog kept by the browser or an
@@ -264,9 +266,12 @@ export class PlayerController {
     const session = events.session
     session?.addEventListener('statechange', () => {
       // iOS Safari fires statechange at the start and at the end of an interruption; `state` may be missing (seen: null) — only
-      // 'interrupted' / 'inactive' mean the audio is still taken
+      // 'interrupted' / 'inactive' mean the audio is still taken. The start one arrives right after the interruption (seen: within 10 ms):
+      // resuming on it takes the audio back from dictation at once, so statechanges in the first seconds are the start, not the end.
       const st = session.state
-      if (this.resumeOnActive && this.interrupted && st !== 'interrupted' && st !== 'inactive') this.resumeNow()
+      if (!this.resumeOnActive || !this.interrupted || st === 'interrupted' || st === 'inactive') return
+      if (this.timers.now() - this.interruptedAt < SESSION_START_WINDOW_MS) return
+      this.resumeNow()
     })
   }
 

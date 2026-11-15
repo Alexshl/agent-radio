@@ -4,6 +4,7 @@ import {
   EDGE_CHECK_MS,
   INTERRUPT_FIRST_MS,
   INTERRUPT_GIVE_UP_MS,
+  SESSION_START_WINDOW_MS,
   LAG_SHOW_S,
   getPlayerId,
   PLAYER_ID_KEY,
@@ -637,6 +638,7 @@ describe('PlayerController live edge', () => {
       const calls = audio.playCalls
       await vi.advanceTimersByTimeAsync(0)
       expect(audio.playCalls).toBe(calls)
+      await vi.advanceTimersByTimeAsync(SESSION_START_WINDOW_MS)
       session.state = 'active'
       session.emit('statechange')
       await vi.advanceTimersByTimeAsync(0)
@@ -650,6 +652,13 @@ describe('PlayerController live edge', () => {
       ;(session as { state?: string | null }).state = null
       interrupt(audio)
       const calls = audio.playCalls
+      // the start of the interruption (dictation beginning): ignored, the microphone keeps the audio
+      session.emit('statechange')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(audio.playCalls).toBe(calls)
+      expect(ctl.getState().playing).toBe(false)
+      await vi.advanceTimersByTimeAsync(SESSION_START_WINDOW_MS)
+      // the end of it
       session.emit('statechange')
       await vi.advanceTimersByTimeAsync(0)
       expect(audio.playCalls).toBe(calls + 1)
@@ -676,6 +685,7 @@ describe('PlayerController live edge', () => {
       const a = await startLive()
       a.ctl.resumeOnActive = true
       interrupt(a.audio)
+      await vi.advanceTimersByTimeAsync(SESSION_START_WINDOW_MS)
       a.session.state = 'active'
       a.session.emit('statechange')
       await vi.advanceTimersByTimeAsync(0)
