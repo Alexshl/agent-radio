@@ -4,7 +4,10 @@ import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '../config'
+import type { Db } from '../db/client'
 import { newId } from '../lib/ids'
+import { prepareSpeech, stressTarget } from './pronunciation'
+import { loadEntries } from './pronunciation-store'
 import type { TtsRegistry } from './registry'
 
 export type { TtsProvider, TtsRequest } from './types'
@@ -62,6 +65,8 @@ export interface ClipRequest {
   lang: string
   chime: boolean
   rate?: number
+  // whose pronunciation dictionary applies (null/undefined = the global one only)
+  userId?: string
 }
 
 // Providers without a native speed option (gemini, ...): pitch-preserving ffmpeg atempo.
@@ -77,6 +82,7 @@ export class TtsService {
     private registry: TtsRegistry,
     private config: Config,
     private chimeFile: () => Promise<string>,
+    private db?: Db,
   ) {}
 
   warmUp() {
@@ -85,17 +91,26 @@ export class TtsService {
   }
 
   // Speech file of the chosen provider; a failing cloud provider falls back to piper (an error only when that fails too).
-  async synthesize(req: { text: string; voice: string | null; lang: string; rate?: number }, outBase: string): Promise<string> {
+  async synthesize(
+    req: { text: string; voice: string | null; lang: string; rate?: number; userId?: string },
+    outBase: string,
+  ): Promise<string> {
     const choice = this.registry.choose(req.voice, req.lang)
+    // pronunciation dictionary + the stress syntax of the chosen engine (one place for every caller)
+    const entries = this.db ? loadEntries(this.db, req.userId) : []
+    const speak = (target: ReturnType<typeof stressTarget>) => prepareSpeech(req.text, entries, req.lang, target)
     try {
       const provider = this.registry.provider(choice.provider)
-      const file = await provider.synthesize({ text: req.text, voice: choice.voice, lang: req.lang, rate: req.rate }, outBase)
+      const text = speak(stressTarget(choice.provider, choice.voice))
+      const file = await provider.synthesize({ text, voice: choice.voice, lang: req.lang, rate: req.rate }, outBase)
       return await applyTempo(file, req.rate, provider.nativeRate === true, outBase)
     } catch (e) {
       if (choice.provider === 'piper') throw e
       console.error(`tts ${choice.provider} failed, falling back to piper:`, e instanceof Error ? e.message : e)
       const fb = this.registry.fallback(req.lang)
-      return await this.registry.provider('piper').synthesize({ text: req.text, voice: fb.voice, lang: req.lang, rate: req.rate }, outBase)
+      return await this.registry
+        .provider('piper')
+        .synthesize({ text: speak('plain'), voice: fb.voice, lang: req.lang, rate: req.rate }, outBase)
     }
   }
 

@@ -1,5 +1,5 @@
 // The signed-in user's API (cookie session): /api/app/*
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { and, desc, eq, gte } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -9,6 +9,7 @@ import type { FullDeps } from '../deps'
 import type { AppEnv } from '../env'
 import { createApiKey, listApiKeys, revokeApiKey } from '../lib/api-keys'
 import { csrfGuard, requireSession } from '../lib/auth'
+import { RateLimiter } from '../lib/rate-limit'
 import { HttpError, badRequest, notFound } from '../lib/http'
 import { nowIso, randomToken } from '../lib/ids'
 import { serveFile } from '../lib/serve-file'
@@ -16,6 +17,7 @@ import { getSetting } from '../lib/settings'
 import { createPlaylist, deletePlaylist, getPlaylist, listPlaylists, playlistBody, updatePlaylist } from '../playlists'
 import { airMessage, spokenText } from '../say'
 import { changeSource } from '../source'
+import { createPron, deletePron, listPron, pronBody, pronPatch, pronView, updatePron } from '../tts/pronunciation-store'
 import { assertMayUpload, assertQuota, INCOMING_DIR, ingestFile, UPLOAD_EXT, UPLOAD_MAX_MB, uploadPolicy } from '../uploads'
 import { checkReachable } from './admin'
 import { receiveUpload } from './api'
@@ -31,6 +33,7 @@ import {
 } from '../stations'
 
 export const MAX_KEYS_PER_USER = 20
+export const MAX_PRONUNCIATIONS = 500
 const pagingQuery = z.object({
   dir: z.string().max(500).optional(),
   q: z.string().max(200).optional(),
@@ -354,13 +357,80 @@ export function appRoutes(deps: FullDeps) {
     if (m.clipPath && existsSync(m.clipPath)) return c.json({ ok: true })
     const text = spokenText(user, m.session, m.text)
     try {
-      const clip = await deps.tts.makeClip({ text, voice: user.voice, lang: user.lang, chime: false, rate: user.speechRate })
+      const clip = await deps.tts.makeClip({
+        text,
+        voice: user.voice,
+        lang: user.lang,
+        chime: false,
+        rate: user.speechRate,
+        userId: user.id,
+      })
       db.update(messages).set({ clipPath: clip, clipCreatedAt: nowIso() }).where(eq(messages.id, m.id)).run()
     } catch (e) {
       console.error('synthesize failed:', e instanceof Error ? e.message : e)
       throw new HttpError(502, 'tts_failed', 'Could not synthesize the message')
     }
     return c.json({ ok: true })
+  })
+
+  // ---- pronunciation dictionary (own entries; the global ones are read-only here) ----
+
+  r.get('/pronunciations', (c) => {
+    const user = c.get('user')
+    return c.json({
+      mine: listPron(db, 'user', user.id).map(pronView),
+      global: listPron(db, 'global', null).map(pronView),
+    })
+  })
+
+  r.post('/pronunciations', async (c) => {
+    const body = pronBody.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body', 'Expected {match, replacement, lang?, note?}')
+    const user = c.get('user')
+    if (listPron(db, 'user', user.id).length >= MAX_PRONUNCIATIONS) throw badRequest('too_many', `At most ${MAX_PRONUNCIATIONS} entries`)
+    return c.json(pronView(createPron(db, 'user', user.id, body.data)), 201)
+  })
+
+  r.patch('/pronunciations/:id', async (c) => {
+    const body = pronPatch.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body')
+    const row = updatePron(db, c.req.param('id'), 'user', c.get('user').id, body.data)
+    if (!row) throw notFound('Entry not found')
+    return c.json(pronView(row))
+  })
+
+  r.delete('/pronunciations/:id', (c) => {
+    if (!deletePron(db, c.req.param('id'), 'user', c.get('user').id)) throw notFound('Entry not found')
+    return c.json({ ok: true })
+  })
+
+  // One phrase with the user's current voice (for the "Прослушать" button); the dictionary applies as usual.
+  const previewLimiter = new RateLimiter(10)
+  r.post('/pronunciations/preview', async (c) => {
+    const body = z
+      .object({ text: z.string().trim().min(1).max(300), lang: z.enum(['uk', 'ru', 'en']).optional() })
+      .safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body', 'Expected {text}')
+    const user = c.get('user')
+    previewLimiter.check(user.id)
+    let clip: string | null = null
+    try {
+      clip = await deps.tts.makeClip({
+        text: body.data.text,
+        voice: user.voice,
+        lang: body.data.lang ?? user.lang,
+        chime: false,
+        rate: user.speechRate,
+        userId: user.id,
+      })
+      const audio = readFileSync(clip)
+      return c.body(audio, 200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' })
+    } catch (e) {
+      console.error('pronunciation preview failed:', e instanceof Error ? e.message : e)
+      throw new HttpError(502, 'tts_failed', 'Could not synthesize the phrase')
+    } finally {
+      if (clip) rmSync(clip, { force: true })
+    }
   })
 
   return r

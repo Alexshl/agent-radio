@@ -16,6 +16,7 @@ import { INVITE_DAYS, createInvite, createReset, deleteInvite, listPendingInvite
 import { type SettingKey, getSetting, setSetting } from '../lib/settings'
 import { LEVEL_RANGES, RATE_RANGE, parseSource } from '../stations'
 import { diskSpace, trashTrack } from '../uploads'
+import { createPron, deletePron, listPron, pronBody, pronPatch, pronView, updatePron } from '../tts/pronunciation-store'
 import { secretName } from '../tts/registry'
 import { DEFAULT_LANGS, cap, filterLangs } from '../tts/piper-catalog'
 import { PIPER_DEFAULT_BY_LANG, PROVIDER_IDS, PROVIDER_LABEL, type ProviderId } from '../tts/voices'
@@ -164,6 +165,29 @@ export function adminRoutes(deps: FullDeps) {
 
   r.delete('/invites/:id', (c) => {
     deleteInvite(db, c.req.param('id'))
+    return c.json({ ok: true })
+  })
+
+  // ---- global pronunciation dictionary ----
+
+  r.get('/pronunciations', (c) => c.json({ items: listPron(db, 'global', null).map(pronView) }))
+
+  r.post('/pronunciations', async (c) => {
+    const body = pronBody.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body', 'Expected {match, replacement, lang?, note?}')
+    return c.json(pronView(createPron(db, 'global', null, body.data)), 201)
+  })
+
+  r.patch('/pronunciations/:id', async (c) => {
+    const body = pronPatch.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body')
+    const row = updatePron(db, c.req.param('id'), 'global', null, body.data)
+    if (!row) throw notFound('Entry not found')
+    return c.json(pronView(row))
+  })
+
+  r.delete('/pronunciations/:id', (c) => {
+    if (!deletePron(db, c.req.param('id'), 'global', null)) throw notFound('Entry not found')
     return c.json({ ok: true })
   })
 

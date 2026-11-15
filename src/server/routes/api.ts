@@ -203,7 +203,14 @@ export function apiRoutes(deps: FullDeps) {
       let note: string | null = null
       if (heard && intro) {
         try {
-          introClip = await deps.tts.makeClip({ text: intro, voice: user.voice, lang: user.lang, chime: st.chime, rate: user.speechRate })
+          introClip = await deps.tts.makeClip({
+            text: intro,
+            voice: user.voice,
+            lang: user.lang,
+            chime: st.chime,
+            rate: user.speechRate,
+            userId: user.id,
+          })
         } catch (e) {
           // the file matters more than its announcement: play without the intro and say so in the history
           console.error('intro failed:', e instanceof Error ? e.message : e)

@@ -4,6 +4,7 @@ import { Admin } from './pages/Admin'
 import { Connect } from './pages/Connect'
 import { History } from './pages/History'
 import { Library } from './pages/Library'
+import { Pronunciation } from './pages/Pronunciation'
 import { RadioPage } from './pages/Radio'
 import { Security } from './pages/Security'
 
@@ -42,6 +43,14 @@ export function App() {
         element={
           <RequireAuth>
             <History />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/pronunciation"
+        element={
+          <RequireAuth>
+            <Pronunciation />
           </RequireAuth>
         }
       />

@@ -58,6 +58,7 @@ export async function airMessage(
     lang: user.lang,
     chime: st.chime,
     rate: user.speechRate,
+    userId: user.id,
   })
   const play = async (clip: string) => {
     await engine.push(st.id, join(config.engineSharedDir, 'clips', basename(clip)))

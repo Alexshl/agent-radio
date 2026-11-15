@@ -751,3 +751,48 @@ body.has-player .ar-toasts {
 body.has-player .ar-shell .rail {
   height: calc(100vh - 64px);
 }
+
+/* ---------------- pronunciation dictionary ---------------- */
+.pron-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.pron-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 64px 72px 110px;
+}
+.pron-cell {
+  overflow-wrap: anywhere;
+  padding: 6px 0;
+}
+.pron-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+@media (max-width: 760px) {
+  .pron-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tbl > .thead.pron-row {
+    display: none;
+  }
+  .trow.pron-row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 2px;
+    padding: 6px 0;
+  }
+  .trow.pron-row > .pron-cell {
+    padding: 0 10px;
+  }
+  .trow.pron-row > .pron-cell::before {
+    content: attr(data-label) ": ";
+    color: var(--muted-foreground);
+    font-size: 11.5px;
+  }
+  .trow.pron-row > .pron-actions {
+    justify-content: flex-start;
+    padding: 0 6px;
+  }
+}

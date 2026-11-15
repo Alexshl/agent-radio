@@ -24,7 +24,7 @@ export function bootstrap(): FullDeps & { ttsService: TtsService } {
     limiter: new RateLimiter(config.sayRatePerMin),
   }
   const full = withDefaults(base)
-  const ttsService = new TtsService(full.registry, config, () => ensureChime(config.dataDir))
+  const ttsService = new TtsService(full.registry, config, () => ensureChime(config.dataDir), full.db)
   return { ...full, tts: ttsService, ttsService }
 }
 
