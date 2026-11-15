@@ -1,0 +1,16 @@
+"play" = "Play";
+"stop" = "Stop";
+"status.playing" = "Live";
+"status.connecting" = "Connecting…";
+"status.stopped" = "Stopped";
+"status.nourl" = "Paste your stream link";
+"settings.title" = "Stream";
+"settings.url.placeholder" = "https://…/stream/….mp3?k=…";
+"settings.paste" = "Paste";
+"settings.save" = "Save";
+"settings.clear" = "Remove link";
+"settings.invalid" = "An http(s) URL is required";
+"settings.token" = "Token";
+"log.title" = "Log";
+"log.copy" = "Copy log";
+"log.empty" = "No events yet";
