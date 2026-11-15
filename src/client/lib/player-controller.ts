@@ -228,7 +228,10 @@ export class PlayerController {
     events.win?.addEventListener('pageshow', () => this.resumeNow())
     const session = events.session
     session?.addEventListener('statechange', () => {
-      if (this.resumeOnActive && this.interrupted && session.state === 'active') this.resumeNow()
+      // iOS Safari fires statechange at the start and at the end of an interruption; `state` may be missing (seen: null) — only
+      // 'interrupted' / 'inactive' mean the audio is still taken
+      const st = session.state
+      if (this.resumeOnActive && this.interrupted && st !== 'interrupted' && st !== 'inactive') this.resumeNow()
     })
   }
 

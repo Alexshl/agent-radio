@@ -639,6 +639,17 @@ describe('PlayerController live edge', () => {
       expect(audio.playCalls).toBe(calls + 1)
       expect(ctl.getState().playing).toBe(true)
     })
+    it('iOS Safari: a statechange without a state (null) at the end of the interruption resumes', async () => {
+      const { ctl, audio, session } = await startLive()
+      ctl.resumeOnActive = true
+      ;(session as { state?: string | null }).state = null
+      interrupt(audio)
+      const calls = audio.playCalls
+      session.emit('statechange')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(audio.playCalls).toBe(calls + 1)
+      expect(ctl.getState().playing).toBe(true)
+    })
     it('audioSession active does nothing when the stream is not interrupted', async () => {
       const { ctl, audio, session } = await startLive()
       ctl.resumeOnActive = true
