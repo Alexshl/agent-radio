@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Terminal, History, KeyRound, LogOut, Moon, Music, Radio, Shield, Sun } from 'lucide-react'
+import { Terminal, History, KeyRound, LogOut, Moon, Music, Radio, Shield, SlidersHorizontal, Sun } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, NavLink, useMatch, useNavigate } from 'react-router'
@@ -14,6 +14,7 @@ const ICON = { size: 18, strokeWidth: 1.6, 'aria-hidden': true } as const
 
 const NAV = [
   { to: '/', label: S.nav.radio, tab: S.tabs.radio, icon: <Radio {...ICON} />, end: true },
+  { to: '/remote', label: S.nav.remote, tab: S.tabs.remote, icon: <SlidersHorizontal {...ICON} /> },
   { to: '/library', label: S.nav.library, tab: S.tabs.library, icon: <Music {...ICON} /> },
   { to: '/connect', label: S.nav.connect, tab: S.tabs.agents, icon: <Terminal {...ICON} /> },
   { to: '/history', label: S.nav.history, tab: S.tabs.history, icon: <History {...ICON} /> },

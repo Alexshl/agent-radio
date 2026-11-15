@@ -15,7 +15,8 @@ import { nowIso, randomToken } from '../lib/ids'
 import { serveFile } from '../lib/serve-file'
 import { getSetting } from '../lib/settings'
 import { createPlaylist, deletePlaylist, getPlaylist, listPlaylists, playlistBody, updatePlaylist } from '../playlists'
-import { airMessage, spokenText } from '../say'
+import { replayBody, replayMessages } from '../replay'
+import { airMessage, notReplay, spokenText } from '../say'
 import { changeSource } from '../source'
 import { createPron, deletePron, listPron, pronBody, pronPatch, pronView, updatePron } from '../tts/pronunciation-store'
 import { assertMayUpload, assertQuota, INCOMING_DIR, ingestFile, UPLOAD_EXT, UPLOAD_MAX_MB, uploadPolicy } from '../uploads'
@@ -94,7 +95,13 @@ export function appRoutes(deps: FullDeps) {
     const st = stationOf(user.id)
     const keys = listApiKeys(db, user.id).filter((k) => !k.revokedAt)
     const lastKey = [...keys].filter((k) => k.lastUsedAt).sort((a, b) => (b.lastUsedAt ?? '').localeCompare(a.lastUsedAt ?? ''))[0]
-    const last = db.select().from(messages).where(eq(messages.userId, user.id)).orderBy(desc(messages.createdAt)).limit(3).all()
+    const last = db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.userId, user.id), notReplay))
+      .orderBy(desc(messages.createdAt))
+      .limit(3)
+      .all()
     return c.json({
       user: { name: user.name, email: user.email, role: user.role },
       station: {
@@ -432,6 +439,14 @@ export function appRoutes(deps: FullDeps) {
     } finally {
       if (clip) rmSync(clip, { force: true })
     }
+  })
+
+  // "Повторить в эфир": the last 1-3 messages (or one by id) go back on air in the user's own stream
+  r.post('/history/replay', async (c) => {
+    const user = c.get('user')
+    const body = replayBody.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body', 'Expected {count: 1..3} or {id}')
+    return c.json(await replayMessages(deps, { user, station: stationOf(user.id), body: body.data }))
   })
 
   return r

@@ -34,12 +34,14 @@ export function Seg<T extends string>({
   onChange,
   label,
   style,
+  className,
 }: {
   value: T
   options: { id: T; label: ReactNode }[]
   onChange: (v: T) => void
   label?: string
   style?: React.CSSProperties
+  className?: string
 }) {
   const key = (id: T) => (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -48,7 +50,7 @@ export function Seg<T extends string>({
     }
   }
   return (
-    <div className="seg" role="tablist" aria-label={label} style={style}>
+    <div className={className ? `seg ${className}` : 'seg'} role="tablist" aria-label={label} style={style}>
       {options.map((o) => (
         <span
           key={o.id}

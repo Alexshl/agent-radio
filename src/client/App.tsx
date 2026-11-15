@@ -6,6 +6,7 @@ import { History } from './pages/History'
 import { Library } from './pages/Library'
 import { Pronunciation } from './pages/Pronunciation'
 import { RadioPage } from './pages/Radio'
+import { Remote } from './pages/Remote'
 import { Security } from './pages/Security'
 
 export function App() {
@@ -19,6 +20,14 @@ export function App() {
         element={
           <RequireAuth>
             <RadioPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/remote"
+        element={
+          <RequireAuth>
+            <Remote />
           </RequireAuth>
         }
       />

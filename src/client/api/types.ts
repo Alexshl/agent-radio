@@ -91,3 +91,9 @@ export interface ApiKey {
   lastSession: string | null
   revokedAt: string | null
 }
+
+export interface ReplayResult {
+  status: 'aired' | 'waiting' | 'skipped'
+  listeners: number
+  ids: string[]
+}

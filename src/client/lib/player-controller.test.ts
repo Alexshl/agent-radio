@@ -366,6 +366,26 @@ describe('PlayerController', () => {
     ctl.stop()
     expect(fn).not.toHaveBeenCalled()
   })
+
+  it('goLive re-opens a live stream on a fresh connection and clears the lag', async () => {
+    const { ctl, audio } = make()
+    ctl.start(live)
+    await tick()
+    audio.bufferedEnd = 22.4
+    ctl.goLive()
+    await tick()
+    expect(ctl.getState().lag).toBe(0)
+    expect(audio.src).toMatch(/^\/stream\/x\.mp3\?_r=/)
+    expect(ctl.getState()).toMatchObject({ current: { key: 'live' }, playing: true })
+  })
+
+  it('goLive does nothing for a file', async () => {
+    const { ctl, audio } = make()
+    ctl.start(track('1'))
+    await tick()
+    ctl.goLive()
+    expect(audio.src).toBe('/t/1')
+  })
 })
 
 describe('PlayerController live edge', () => {
