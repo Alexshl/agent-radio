@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { controlTokens, messages, presets, stations, users } from './db/schema'
+import { controlTokens, messages, secrets, presets, stations, users } from './db/schema'
 import { newId } from './lib/ids'
 import { createPlaylist } from './playlists'
 import { parseSource } from './stations'
@@ -77,6 +77,27 @@ describe('control token management (/api/app/control-token)', () => {
     expect((await t.req('/api/app/control-token', { method: 'DELETE', cookie })).status).toBe(404)
     const none = (await (await t.req('/api/app/control-token', { cookie })).json()) as { token: unknown }
     expect(none.token).toBeNull()
+  })
+
+  it('reveal returns the secret to the owner only; regenerate replaces it; revoke removes it', async () => {
+    const t = setup()
+    const a = await withToken(t, 'a@x.io')
+    const b = await withToken(t, 'b@x.io')
+    const reveal = async (cookie: string) => t.req('/api/app/control-token/reveal', { method: 'POST', cookie })
+    const r1 = await reveal(a.cookie)
+    expect(r1.status).toBe(200)
+    expect(((await r1.json()) as { secret: string }).secret).toBe(a.k)
+    expect(((await (await reveal(b.cookie)).json()) as { secret: string }).secret).toBe(b.k)
+    expect((await t.req('/api/app/control-token/reveal', { method: 'POST' })).status).toBe(401)
+    // the secret is stored encrypted, not in the clear
+    expect(JSON.stringify(t.db.select().from(secrets).all())).not.toContain(a.k)
+
+    const k2 = ((await (await t.req('/api/app/control-token', { method: 'POST', cookie: a.cookie })).json()) as { secret: string }).secret
+    expect(((await (await reveal(a.cookie)).json()) as { secret: string }).secret).toBe(k2)
+
+    await t.req('/api/app/control-token', { method: 'DELETE', cookie: a.cookie })
+    expect((await reveal(a.cookie)).status).toBe(404)
+    expect((await reveal(b.cookie)).status).toBe(200)
   })
 
   it('needs a session', async () => {

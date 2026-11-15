@@ -11,6 +11,7 @@ import { SUMMARY_LANGS } from '../lang'
 import { createApiKey, listApiKeys, revokeApiKey } from '../lib/api-keys'
 import { controlTokenInfo, issueControlToken, revokeControlToken } from '../lib/control-token'
 import { csrfGuard, requireSession } from '../lib/auth'
+import { SecretStore, getAppSecret } from '../lib/secrets'
 import { RateLimiter } from '../lib/rate-limit'
 import { HttpError, badRequest, notFound } from '../lib/http'
 import { nowIso, randomToken } from '../lib/ids'
@@ -256,17 +257,32 @@ export function appRoutes(deps: FullDeps) {
     return c.json({ ok: true })
   })
 
-  // ---- control token ("Быстрые команды"): the secret is returned once, by the call that creates / regenerates it ----
+  // ---- control token ("Быстрые команды"): the hash authenticates, the secret is also kept encrypted (SecretStore) so the links can be shown again ----
+
+  const controlSecrets = new SecretStore(db, () => getAppSecret(config))
+  const controlSecretName = (userId: string) => `control-token:${userId}`
 
   r.get('/control-token', (c) => c.json({ token: controlTokenInfo(db, c.get('user').id) }))
 
   r.post('/control-token', async (c) => {
-    const { token, info } = await issueControlToken(db, c.get('user').id)
+    const userId = c.get('user').id
+    const { token, info } = await issueControlToken(db, userId)
+    await controlSecrets.put(controlSecretName(userId), token)
     return c.json({ secret: token, token: info }, 201)
   })
 
+  r.post('/control-token/reveal', async (c) => {
+    const userId = c.get('user').id
+    const secret = controlTokenInfo(db, userId) ? await controlSecrets.get(controlSecretName(userId)) : null
+    if (!secret) throw notFound('No control token')
+    c.header('Cache-Control', 'no-store')
+    return c.json({ secret })
+  })
+
   r.delete('/control-token', (c) => {
-    if (!revokeControlToken(db, c.get('user').id)) throw notFound('No control token')
+    const userId = c.get('user').id
+    controlSecrets.delete(controlSecretName(userId))
+    if (!revokeControlToken(db, userId)) throw notFound('No control token')
     return c.json({ ok: true })
   })
 

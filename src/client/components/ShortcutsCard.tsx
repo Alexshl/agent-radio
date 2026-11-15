@@ -40,6 +40,11 @@ export function ShortcutsCard() {
     },
     onError: fail,
   })
+  const reveal = useMutation({
+    mutationFn: () => post<{ secret: string }>('/app/control-token/reveal'),
+    onSuccess: (r) => setSecret(r.secret),
+    onError: fail,
+  })
   const revoke = useMutation({
     mutationFn: () => del('/app/control-token'),
     onSuccess: () => {
@@ -121,8 +126,13 @@ export function ShortcutsCard() {
         )}
 
         {token && !secret && (
-          <div className="muted" style={{ fontSize: 12.5 }}>
-            {T.hiddenNote}
+          <div className="stack" style={{ gap: 10, alignItems: 'flex-start' }}>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              {T.hiddenNote}
+            </div>
+            <button type="button" className="btn primary sc-btn" disabled={reveal.isPending} onClick={() => reveal.mutate()}>
+              {T.show}
+            </button>
           </div>
         )}
 
