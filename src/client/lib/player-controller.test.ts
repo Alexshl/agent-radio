@@ -4,6 +4,7 @@ import {
   EDGE_CHECK_MS,
   INTERRUPT_FIRST_MS,
   INTERRUPT_GIVE_UP_MS,
+  RECONNECT_DELAYS_MS,
   SESSION_START_WINDOW_MS,
   LAG_SHOW_S,
   getPlayerId,
@@ -679,6 +680,27 @@ describe('PlayerController live edge', () => {
       expect(audio.src).toBe('')
       expect(audio.loads).toBe(loads + 1)
       expect(ctl.getState()).toMatchObject({ current: { key: 'live' }, playing: false })
+    })
+    it('a pause right after a stall is a cut stream (engine restart): it reconnects by itself', async () => {
+      const { ctl, audio } = await startLive()
+      const trace: string[] = []
+      ctl.onTrace = (type) => trace.push(type)
+      audio.emit('stalled')
+      interrupt(audio)
+      expect(trace).toEqual(['streamCut'])
+      expect(ctl.getState()).toMatchObject({ reconnecting: true })
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(RECONNECT_DELAYS_MS[0] ?? 1000)
+      expect(audio.playCalls).toBe(calls + 1)
+      expect(audio.src).toMatch(/_r=\d+$/)
+    })
+    it('a pause without a stall before it is still an interruption (dictation): no reconnect', async () => {
+      const { ctl, audio } = await startLive()
+      interrupt(audio)
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(audio.playCalls).toBe(calls)
+      expect(ctl.getState()).toMatchObject({ playing: false })
     })
     it('after the release every resume path re-opens a fresh stream', async () => {
       // Safari's own auto-play finds no src: only our paths resume

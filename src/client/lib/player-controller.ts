@@ -224,6 +224,15 @@ export class PlayerController {
       // our own pause()/stop()/start() already cleared `playing`: only a pause from outside finds a playing live stream
       if (this.state.playing && this.state.current.kind === 'live') {
         this.needFresh = true
+        // the stream stalled just before: the server cut it (engine restart) and Safari paused the element at its end. That is a broken
+        // connection, not the system taking the audio: reconnect on our own instead of waiting for the user.
+        if (this.stallTimer) {
+          this.timers.clear(this.stallTimer)
+          this.stallTimer = null
+          this.onTrace?.('streamCut')
+          this.release()
+          return this.dropped()
+        }
         return this.interrupt()
       }
       this.set({ playing: false })
