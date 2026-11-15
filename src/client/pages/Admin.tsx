@@ -405,7 +405,7 @@ function ProviderRow({ p, voices }: { p: TtsData['providers'][number]; voices: T
             )}
           </div>
           <div className="muted" style={{ fontSize: 12 }}>
-            {p.id === 'azure' && p.region ? `Регион ${p.region} · ` : ''}
+            {p.id === 'azure' && p.region ? `${S.admin.tts.region} ${p.region} · ` : ''}
             {PROVIDER_DESC[p.id]}
           </div>
         </div>

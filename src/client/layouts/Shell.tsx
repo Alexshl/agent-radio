@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { Link, NavLink, useMatch, useNavigate } from 'react-router'
 import { post } from '../api/client'
 import { useMe } from '../api/hooks'
+import { LanguageSwitch } from '../components/LanguageSwitch'
 import { usePlayer } from '../components/Player'
 import { S } from '../i18n'
 import { initials } from '../lib/format'
@@ -66,6 +67,9 @@ function UserMenu() {
           <KeyRound size={15} aria-hidden="true" />
           {S.security.menu}
         </Link>
+        <div className="dd-sep" />
+        <LanguageSwitch variant="menu" />
+        <div className="dd-sep" />
         <button type="button" className="dd-i" style={{ background: 'none', border: 0, width: '100%', font: 'inherit' }} onClick={logout}>
           <LogOut size={15} aria-hidden="true" />
           {S.common.logout}
