@@ -10,7 +10,7 @@ import { Qr } from '../components/Qr'
 import { ReplayButton, useReplay } from '../components/Replay'
 import { useToast } from '../components/Toast'
 import { ErrorBox, Loading, PageHead, Seg, Switch, copyText, useErrorToast } from '../components/ui'
-import { S } from '../i18n'
+import { LANG_NAMES, S } from '../i18n'
 import { Shell } from '../layouts/Shell'
 import { fmtDb, fmtRate, fmtShortWhen, fmtTime, fmtTotal, fmtWhenInline } from '../lib/format'
 import { hostOf, liveSource, sourceInfo } from '../lib/source-info'
@@ -24,8 +24,8 @@ interface FolderNode {
 type Tab = 'stations' | 'playlists' | 'url' | 'silence'
 const WHEN = { today: S.common.today, yesterday: S.common.yesterday, never: S.common.never }
 
-const PROVIDER_NAME: Record<string, string> = { azure: 'Azure', piper: 'Piper (локально)', openai: 'OpenAI', gemini: 'Gemini' }
-const LANG_NAME: Record<string, string> = { uk: 'Українська', ru: 'Русский', en: 'English', multi: 'Многоязычный' }
+const PROVIDER_NAME: Record<string, string> = { azure: 'Azure', piper: S.radio.piperLocal, openai: 'OpenAI', gemini: 'Gemini' }
+const LANG_NAME: Record<string, string> = { ...LANG_NAMES, multi: S.radio.voiceMulti }
 
 // "Українська · Mykyta (Piper, high)"
 const voiceLabel = (v: { label: string; provider: string; lang: string; quality?: string }) =>

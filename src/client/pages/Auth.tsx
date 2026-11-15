@@ -7,6 +7,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router'
 import { ApiError, get, post } from '../api/client'
 import { useMe } from '../api/hooks'
 import type { Me } from '../api/types'
+import { LanguageSwitch } from '../components/LanguageSwitch'
 import { ErrorBox, Loading } from '../components/ui'
 import { S, errorText } from '../i18n'
 import { fmtDate } from '../lib/format'
@@ -29,6 +30,7 @@ function Frame({ children }: { children: React.ReactNode }) {
       <div className="muted" style={{ fontSize: 12 }} title={S.auth.whatIsText}>
         {S.auth.footer} · <span style={{ textDecoration: 'underline dotted' }}>{S.auth.whatIs}</span>
       </div>
+      <LanguageSwitch variant="auth" />
     </div>
   )
 }

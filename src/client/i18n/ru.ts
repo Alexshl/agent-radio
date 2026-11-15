@@ -1,7 +1,7 @@
 import { fmtNumber } from '../lib/format'
 import { plural } from './plural'
 
-// All UI copy lives here (Russian). A second language = another file with the same shape.
+// All UI copy in Russian. This file defines the `Strings` shape; uk.ts and en.ts must match it.
 export const ru = {
   appName: 'agent-radio',
   nav: {
@@ -37,6 +37,7 @@ export const ru = {
     check: 'Проверить',
     add: 'Добавить',
     close: 'Закрыть',
+    interfaceLanguage: 'Язык интерфейса',
     errors: {
       unauthorized: 'Нужно войти',
       forbidden: 'Недостаточно прав',
@@ -201,6 +202,8 @@ export const ru = {
     mobileSettingsAria: 'Перейти к настройкам эфира',
     playAria: 'Слушать',
     stopAria: 'Остановить',
+    piperLocal: 'Piper (локально)',
+    voiceMulti: 'Многоязычный',
   },
   pron: {
     title: 'Словарь произношения',
