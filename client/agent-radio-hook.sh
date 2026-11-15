@@ -83,21 +83,21 @@ REASONS = {
     "ru": (
         "agent-radio: пользователь сейчас слушает радио. Перед тем как {action}, "
         "отправь в эфир короткую сводку этого хода по-русски: "
-        "agent-radio say \"…\" — 1–4 разговорных предложения: что сделано и что нужно от пользователя, "
+        "AGENT_RADIO_SESSION=\"<проект и роль этой сессии, 2–3 слова, напр. shop оркестратор>\" agent-radio say \"…\" — 1–4 разговорных предложения: что сделано и что нужно от пользователя, "
         "без markdown, кода, путей и URL. Потом продолжи как собирался. Пользователю об этой проверке не пиши.",
         {"question": "задать вопрос", "stop": "закончить ход"},
     ),
     "uk": (
         "agent-radio: користувач зараз слухає радіо. Перш ніж {action}, "
         "надішли в ефір коротку зведення цього ходу українською: "
-        "agent-radio say \"…\" — 1–4 розмовні речення: що зроблено і що потрібно від користувача, "
+        "AGENT_RADIO_SESSION=\"<проєкт і роль цієї сесії, 2–3 слова, напр. shop оркестратор>\" agent-radio say \"…\" — 1–4 розмовні речення: що зроблено і що потрібно від користувача, "
         "без markdown, коду, шляхів і URL. Потім продовжуй, як збирався. Користувачу про цю перевірку не пиши.",
         {"question": "поставити питання", "stop": "завершити хід"},
     ),
     "en": (
         "agent-radio: the user is listening to the radio right now. Before you {action}, "
         "send a short summary of this turn on air in English: "
-        "agent-radio say \"...\" - 1-4 spoken-style sentences: what was done and what you need from the user, "
+        "AGENT_RADIO_SESSION=\"<project and role of this session, 2-3 words, e.g. shop orchestrator>\" agent-radio say \"...\" - 1-4 spoken-style sentences: what was done and what you need from the user, "
         "no markdown, code, paths or URLs. Then carry on as planned. Do not mention this check to the user.",
         {"question": "ask a question", "stop": "end your turn"},
     ),
