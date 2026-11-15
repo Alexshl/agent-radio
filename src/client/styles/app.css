@@ -764,7 +764,7 @@ body.has-player .ar-shell .rail {
 }
 .pron-cell {
   overflow-wrap: anywhere;
-  padding: 6px 0;
+  padding-block: 6px;
 }
 .pron-actions {
   display: flex;
