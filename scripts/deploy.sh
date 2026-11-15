@@ -278,7 +278,7 @@ deploy_prod() {
     if printf '%s' "$said" | grep -q 'skipped'; then
       say 'smoke: nobody is listening (the deploy itself may have cut the listeners), the test message was skipped'
     else
-      printf '%s' "$said" | grep -q 'played' || die 'smoke: the test message was not played'
+      printf '%s' "$said" | grep -q '^agent-radio: played' || die 'smoke: the test message was not played'
     fi
   fi
   banner "PRODUCTION DEPLOYED $SHA"
