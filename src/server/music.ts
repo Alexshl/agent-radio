@@ -41,6 +41,12 @@ function writeM3u(config: Config, stationId: string, engineFiles: string[]): str
   return join(config.engineSharedDir, 'playlists', `${stationId}.m3u`)
 }
 
+// The path the engine sees a library track under (relative path from the tracks table).
+export function engineTrackPath(config: Config, relPath: string): string {
+  const root = resolve(config.musicDir)
+  return join(config.engineMusicDir, relative(root, resolveInside(root, relPath)))
+}
+
 // An explicit track list (paths relative to the library, in play order) -> <shared>/playlists/<stationId>.m3u.
 export function writeTrackList(config: Config, stationId: string, relPaths: string[]): string {
   if (relPaths.length === 0) throw badRequest('empty_playlist', 'The playlist has no tracks')

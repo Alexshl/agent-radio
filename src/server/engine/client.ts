@@ -2,6 +2,8 @@
 export type EngineSourceSpec =
   | { type: 'relay'; url: string }
   | { type: 'playlist'; path: string; mode?: 'randomize' | 'normal' }
+  // learn mode: songs queued by the app (pushMusic) go first, the playlist plays only while the queue is empty
+  | { type: 'queue'; path: string; mode?: 'randomize' | 'normal' }
   | { type: 'silence' }
 
 export interface EngineLevels {
@@ -27,6 +29,12 @@ export interface EngineApi {
   push(id: string, path: string, msgId?: string): Promise<void>
   // an uploaded file: the music bed is muted (not ducked) while it plays; voice messages wait for it
   pushTrack(id: string, path: string, msgId?: string): Promise<void>
+  // learn mode ("queue" source): a song or a spoken intro for the music queue; amplifyDb levels it (an intro to the voice level)
+  pushMusic(id: string, path: string, msgId: string, opts?: { title?: string; amplifyDb?: number }): Promise<void>
+  // drops what is queued (not what is playing)
+  flushMusic(id: string): Promise<void>
+  // how many requests wait in the music queue
+  musicQueue(id: string): Promise<number>
   setDuck(id: string, duckDb: number): Promise<void>
   // mix levels in dB (any subset), applied live
   setLevels(id: string, levels: Partial<EngineLevels>): Promise<void>
@@ -81,6 +89,18 @@ export class EngineClient implements EngineApi {
 
   async pushTrack(id: string, path: string, msgId?: string): Promise<void> {
     await this.call('POST', '/track/push', { id, path, msg: msgId })
+  }
+
+  async pushMusic(id: string, path: string, msgId: string, opts: { title?: string; amplifyDb?: number } = {}): Promise<void> {
+    await this.call('POST', '/music/push', { id, path, msg: msgId, title: opts.title, amplify_db: opts.amplifyDb })
+  }
+
+  async flushMusic(id: string): Promise<void> {
+    await this.call('POST', '/music/flush', { id })
+  }
+
+  async musicQueue(id: string): Promise<number> {
+    return (await this.call<{ length: number }>('GET', `/music/queue?id=${encodeURIComponent(id)}`)).length
   }
 
   async setDuck(id: string, duckDb: number): Promise<void> {

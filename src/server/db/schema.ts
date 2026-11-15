@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 // Conventions (same as fmetric): ids are uuid TEXT (stations: a short slug, it is the icecast mount), times are ISO-8601 UTC strings,
 // enums are checked in TypeScript (no CHECK constraints), migrations only add.
@@ -23,6 +23,10 @@ export const users = sqliteTable(
     speakSession: integer('speak_session', { mode: 'boolean' }).notNull().default(true),
     // speech rate multiplier 0.8..1.6
     speechRate: real('speech_rate').notNull().default(1),
+    // "Learn language" mode: the app queues the songs of the user's playlist itself and says who sings before some of them.
+    // learnEvery: an intro before every 1st / 2nd / 3rd song
+    learnMode: integer('learn_mode').notNull().default(0),
+    learnEvery: integer('learn_every').notNull().default(1),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -67,6 +71,9 @@ export const stations = sqliteTable('stations', {
   voiceGainDb: real('voice_gain_db').notNull().default(0),
   trackGainDb: real('track_gain_db').notNull().default(0),
   chime: integer('chime', { mode: 'boolean' }).notNull().default(true),
+  // learn mode: JSON {playlistId, order, bag: [track ids still to play], cursor} (the shuffle bag survives restarts) and the every-N counter
+  learnBag: text('learn_bag'),
+  learnCounter: integer('learn_counter').notNull().default(0),
   // epoch ms of the last moment icecast showed a listener (the grace window of "recently listening", see listeners.ts)
   lastListenerSeenAt: integer('last_listener_seen_at'),
   createdAt: text('created_at').notNull(),
@@ -279,3 +286,85 @@ export const controlTokens = sqliteTable('control_tokens', {
   createdAt: text('created_at').notNull(),
   lastUsedAt: text('last_used_at'),
 })
+
+// Learn mode: lyrics of a library track (filled in by a later phase), one row per track.
+export const songLyrics = sqliteTable('song_lyrics', {
+  trackId: text('track_id')
+    .primaryKey()
+    .references(() => tracks.id, { onDelete: 'cascade' }),
+  lyrics: text('lyrics'),
+  // JSON [{t: seconds, text}] when the source has timing
+  synced: text('synced'),
+  lang: text('lang'),
+  source: text('source'),
+  // found | not_found | instrumental | error
+  status: text('status').notNull().default('not_found'),
+  fetchedAt: text('fetched_at').notNull(),
+})
+
+// Learn mode: the generated notes of a track in one target language (translation, summary, spoken intro).
+export const songNotes = sqliteTable(
+  'song_notes',
+  {
+    trackId: text('track_id')
+      .notNull()
+      .references(() => tracks.id, { onDelete: 'cascade' }),
+    lang: text('lang').notNull(),
+    // JSON [{src, tr}]
+    pairs: text('pairs'),
+    summary: text('summary'),
+    introText: text('intro_text'),
+    // JSON [string]: phrases worth noticing
+    hooks: text('hooks'),
+    model: text('model'),
+    tokensIn: integer('tokens_in'),
+    tokensOut: integer('tokens_out'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('song_notes_track_lang').on(t.trackId, t.lang)],
+)
+
+// Learn mode: a log of what the app queued. One row per song: planned -> pushed -> intro (the spoken intro is on air) -> playing -> done,
+// or lost (the engine forgot it: a restart) / skipped. Also drives the recovery after an engine restart and, later, the archive.
+export const learnPlays = sqliteTable(
+  'learn_plays',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    stationId: text('station_id').notNull(),
+    trackId: text('track_id').notNull(),
+    status: text('status').notNull(),
+    // the engine message ids (engine /msg/states); the intro is null when there is none
+    trackMsg: text('track_msg').notNull(),
+    introMsg: text('intro_msg'),
+    // the spoken intro clip (path inside the app container), kept so that a lost song can be queued again with it
+    introClip: text('intro_clip'),
+    // 1 + how many times this song was queued again after the engine lost it
+    attempt: integer('attempt').notNull().default(1),
+    // a lost, never started song has been queued again (or given up)
+    retried: integer('retried').notNull().default(0),
+    plannedAt: integer('planned_at').notNull(),
+    pushedAt: integer('pushed_at'),
+    startedAt: integer('started_at'),
+    endedAt: integer('ended_at'),
+  },
+  (t) => [index('learn_plays_user_status').on(t.userId, t.status), index('learn_plays_station_status').on(t.stationId, t.status)],
+)
+
+// Learn mode: "I know this song / not interesting": such a song is queued without an intro and is not counted for the every-N counter.
+export const learnSongPrefs = sqliteTable(
+  'learn_song_prefs',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    trackId: text('track_id')
+      .notNull()
+      .references(() => tracks.id, { onDelete: 'cascade' }),
+    skip: integer('skip').notNull().default(0),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.trackId] })],
+)
