@@ -174,6 +174,8 @@ export const en: Strings = {
     voice: 'Voice',
     voiceDefault: 'Default',
     summaryLang: 'Summary language',
+    voiceLangMismatch: (voice: string, lang: string) => `Voice "${voice}" is not meant for ${lang}: the pronunciation may be wrong.`,
+    voiceLangUse: (voice: string) => `Use ${voice}`,
     duckLabel: 'Ducking under the voice',
     speechRate: 'Speech rate',
     levelsTitle: 'Balance',

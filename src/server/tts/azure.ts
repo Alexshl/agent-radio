@@ -1,7 +1,16 @@
 import { writeFile } from 'node:fs/promises'
 import type { TtsProvider, TtsRequest } from './types'
 
-const LOCALES: Record<string, string> = { uk: 'uk-UA', ru: 'ru-RU', en: 'en-US' }
+const LOCALES: Record<string, string> = {
+  uk: 'uk-UA',
+  ru: 'ru-RU',
+  en: 'en-US',
+  lv: 'lv-LV',
+  et: 'et-EE',
+  lt: 'lt-LT',
+  de: 'de-DE',
+  sv: 'sv-SE',
+}
 
 export const xmlEscape = (s: string) =>
   s.replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c] ?? c)

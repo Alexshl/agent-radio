@@ -176,6 +176,8 @@ export const lv: Strings = {
     voice: 'Balss',
     voiceDefault: 'Noklusējuma',
     summaryLang: 'Kopsavilkumu valoda',
+    voiceLangMismatch: (voice: string, lang: string) => `Balss "${voice}" nav paredzēta valodai ${lang}: izruna var būt nepareiza.`,
+    voiceLangUse: (voice: string) => `Izvēlēties ${voice}`,
     duckLabel: 'Pieklusināšana zem balss',
     speechRate: 'Runas ātrums',
     levelsTitle: 'Līdzsvars',

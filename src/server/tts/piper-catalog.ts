@@ -2,6 +2,7 @@
 // downloaded into the models directory (voices that are not in the catalog, or the catalog was never fetched).
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { SUMMARY_LANGS } from '../lang'
 
 export const PIPER_HF = 'https://huggingface.co/rhasspy/piper-voices/resolve/main'
 export const CATALOG_URL = `${PIPER_HF}/voices.json`
@@ -75,7 +76,7 @@ export function parseCatalog(raw: unknown): CatalogVoice[] {
 }
 
 // Languages shown by default.
-export const DEFAULT_LANGS = ['uk', 'ru', 'en']
+export const DEFAULT_LANGS: string[] = [...SUMMARY_LANGS]
 export const filterLangs = (voices: CatalogVoice[], langs: string[] | 'all') =>
   langs === 'all' ? voices : voices.filter((v) => langs.includes(v.lang))
 

@@ -8,13 +8,14 @@ import { useMe } from '../api/hooks'
 import { usePlayer } from '../components/Player'
 import { useToast } from '../components/Toast'
 import { ErrorBox, Loading, PageHead, Seg, useErrorToast } from '../components/ui'
-import { S } from '../i18n'
+import { LANGS as SUMMARY_LANGS, S } from '../i18n'
+import type { Lang as SummaryLang } from '../i18n'
 import { Shell } from '../layouts/Shell'
 
 interface Entry {
   id: string
   scope: 'global' | 'user'
-  lang: 'ru' | 'uk' | 'en' | '*'
+  lang: SummaryLang | '*'
   match: string
   replacement: string
   note: string
@@ -24,9 +25,7 @@ type Scope = 'mine' | 'shared'
 
 const LANGS: { id: Lang; label: string }[] = [
   { id: '*', label: S.pron.anyLang },
-  { id: 'ru', label: 'RU' },
-  { id: 'uk', label: 'UK' },
-  { id: 'en', label: 'EN' },
+  ...SUMMARY_LANGS.map((id) => ({ id, label: id.toUpperCase() })),
 ]
 const langLabel = (l: string) => (l === '*' ? S.pron.anyLang : l.toUpperCase())
 
@@ -236,7 +235,7 @@ export function Pronunciation() {
             <div className="field">
               {/* biome-ignore lint/a11y/noLabelWithoutControl: caption of the segmented control below */}
               <label>{S.pron.lang}</label>
-              <Seg value={lang} options={LANGS} onChange={setLang} label={S.pron.lang} />
+              <Seg value={lang} options={LANGS} onChange={setLang} label={S.pron.lang} style={{ flexWrap: 'wrap' }} />
             </div>
             <div className="field">
               <label htmlFor="pron-note">{S.pron.note}</label>

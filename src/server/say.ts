@@ -14,7 +14,16 @@ type UserRow = typeof users.$inferSelect
 export const REPLAY_NOTE = 'replay'
 export const notReplay = or(isNull(messages.note), ne(messages.note, REPLAY_NOTE))
 
-const SESSION_WORD: Record<string, string> = { uk: 'Сесія', ru: 'Сессия', en: 'Session' }
+const SESSION_WORD: Record<string, string> = {
+  uk: 'Сесія',
+  ru: 'Сессия',
+  en: 'Session',
+  lv: 'Sesija',
+  et: 'Sessioon',
+  lt: 'Sesija',
+  de: 'Sitzung',
+  sv: 'Session',
+}
 
 export function spokenText(user: Pick<UserRow, 'lang' | 'speakSession'>, session: string, text: string): string {
   if (!user.speakSession) return text

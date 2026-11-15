@@ -174,6 +174,8 @@ export const uk: Strings = {
     voice: 'Голос',
     voiceDefault: 'За замовчуванням',
     summaryLang: 'Мова зведень',
+    voiceLangMismatch: (voice: string, lang: string) => `Голос «${voice}» не призначений для мови «${lang}»: вимова може бути хибною.`,
+    voiceLangUse: (voice: string) => `Обрати ${voice}`,
     duckLabel: 'Приглушення під голосом',
     speechRate: 'Швидкість мовлення',
     levelsTitle: 'Баланс',

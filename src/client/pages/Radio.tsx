@@ -10,9 +10,10 @@ import { Qr } from '../components/Qr'
 import { ReplayButton, useReplay } from '../components/Replay'
 import { useToast } from '../components/Toast'
 import { ErrorBox, Loading, PageHead, Seg, Switch, copyText, useErrorToast } from '../components/ui'
-import { LANG_NAMES, S } from '../i18n'
+import { LANGS, LANG_NAMES, S } from '../i18n'
 import { Shell } from '../layouts/Shell'
 import { fmtDb, fmtRate, fmtShortWhen, fmtTime, fmtTotal, fmtWhenInline } from '../lib/format'
+import { firstVoiceFor, voiceMismatch, voicesForLang } from '../lib/voice-lang'
 import { hostOf, liveSource, sourceInfo } from '../lib/source-info'
 
 interface FolderNode {
@@ -33,7 +34,7 @@ const voiceLabel = (v: { label: string; provider: string; lang: string; quality?
 
 // the voices of one provider, ordered by language then name
 const voiceGroups = (voices: { key: string; label: string; provider: string; lang: string; quality?: string }[]) => {
-  const order = ['uk', 'ru', 'en']
+  const order: string[] = [...LANGS]
   const rank = (l: string) => (order.includes(l) ? order.indexOf(l) : l === 'multi' ? 50 : 99)
   const by = new Map<string, typeof voices>()
   for (const v of voices) by.set(v.provider, [...(by.get(v.provider) ?? []), v])
@@ -499,6 +500,10 @@ function VoiceCard({ r }: { r: Radio }) {
   })
   const s = r.settings
   const defaultVoice = r.voices.find((v) => v.key === r.defaultVoice)
+  // the picker offers the voices that speak the summary language (plus the one already chosen); a voice that does not is warned about, not swapped
+  const pickable = voicesForLang(r.voices, s.lang, s.voice)
+  const mismatch = voiceMismatch(r.voices, s.voice ?? r.defaultVoice, s.lang)
+  const suggestion = mismatch?.suggestion ?? firstVoiceFor(r.voices, s.lang)
   return (
     <section className="card">
       <div className="card-h">{S.radio.voiceMix}</div>
@@ -510,7 +515,7 @@ function VoiceCard({ r }: { r: Radio }) {
               {S.radio.voiceDefault}
               {defaultVoice ? ` (${defaultVoice.label})` : ''}
             </option>
-            {voiceGroups(r.voices).map((g) => (
+            {voiceGroups(pickable).map((g) => (
               <optgroup key={g.provider} label={PROVIDER_NAME[g.provider] ?? g.provider}>
                 {g.list.map((v) => (
                   <option key={v.key} value={v.key}>
@@ -520,6 +525,19 @@ function VoiceCard({ r }: { r: Radio }) {
               </optgroup>
             ))}
           </select>
+          {mismatch && (
+            <div className="muted" role="alert" style={{ fontSize: 12.5, marginTop: 6 }}>
+              {S.radio.voiceLangMismatch(mismatch.current.label, LANG_NAMES[s.lang as keyof typeof LANG_NAMES] ?? s.lang)}
+              {suggestion && (
+                <>
+                  {' '}
+                  <button type="button" className="btn sm" disabled={save.isPending} onClick={() => save.mutate({ voice: suggestion.key })}>
+                    {S.radio.voiceLangUse(suggestion.label)}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
         <Link to="/pronunciation" style={{ fontSize: 13, fontWeight: 550, color: 'var(--brand-primary)' }}>
           {S.radio.pronunciationLink}
@@ -537,16 +555,13 @@ function VoiceCard({ r }: { r: Radio }) {
         <div className="field">
           {/* biome-ignore lint/a11y/noLabelWithoutControl: caption of the segmented control below */}
           <label>{S.radio.summaryLang}</label>
-          <Seg
-            value={s.lang}
-            options={[
-              { id: 'uk', label: 'UK' },
-              { id: 'ru', label: 'RU' },
-              { id: 'en', label: 'EN' },
-            ]}
-            onChange={(lang) => save.mutate({ lang })}
-            label={S.radio.summaryLang}
-          />
+          <select className="inp" aria-label={S.radio.summaryLang} value={s.lang} onChange={(e) => save.mutate({ lang: e.target.value })}>
+            {LANGS.map((l) => (
+              <option key={l} value={l}>
+                {LANG_NAMES[l]}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="stack" style={{ gap: 12 }}>
           <div className="row between" style={{ gap: 12 }}>

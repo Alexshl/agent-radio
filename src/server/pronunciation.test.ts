@@ -64,6 +64,13 @@ describe('per-engine stress syntax', () => {
     expect(renderStress(t, 'plain')).toBe('закоммитил в Клод, C++ и 2+2')
   })
 
+  it('strips the mark before Latin vowels, including diacritic ones, for plain engines', () => {
+    const vowels = 'ā ē ī ū ō õ ä ö ü å ė į ų y Ā Ä Ö Ü Å Õ'.split(' ')
+    for (const v of vowels) expect(renderStress(`k+${v}ds`, 'plain')).toBe(`k${v}ds`)
+    expect(renderStress('Br+ūnā, T+ür, h+öra', 'plain')).toBe('Brūnā, Tür, höra')
+    expect(renderStress('C++ und 2+2', 'plain')).toBe('C++ und 2+2')
+  })
+
   it('acute goes right after the marked vowel', () => {
     expect(renderStress('к+ом+іт', 'acute-after')).toBe('ко́мі́т')
     expect(renderStress('+эндпоинт', 'acute-after')).toBe('э́ндпоинт')
