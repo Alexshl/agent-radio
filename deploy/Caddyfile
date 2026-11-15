@@ -1,0 +1,57 @@
+# Front proxy of agent-radio (compose service `front`). It owns the public port, so the app can be rebuilt without dropping streams:
+#   /stream/<id>.mp3?k=<token>  -> the app only checks the token (forward_auth), then the stream comes straight from the icecast mount
+#   everything else             -> the app (waits up to 10 s while it restarts)
+# An open stream does not depend on the app: with the app down the listeners keep hearing the radio.
+# (the admin API stays on its default localhost:2019 inside the container: `caddy reload` applies a changed Caddyfile without dropping streams)
+{
+	auto_https off
+}
+
+:8080 {
+	# access log without query strings (stream URLs carry the listen token)
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp \?.* ""
+			}
+		}
+	}
+
+	handle /__front/healthz {
+		respond "ok" 200
+	}
+
+	# internal endpoints are for the app's own network only
+	handle /internal/* {
+		respond 404
+	}
+
+	@mp3 path_regexp mp3 ^/stream/([a-z0-9]+)\.mp3$
+	handle @mp3 {
+		route {
+			forward_auth app:8790 {
+				uri /internal/stream-auth
+				lb_try_duration 10s
+				lb_try_interval 500ms
+			}
+			rewrite * /{re.mp3.1}
+			uri query -k
+			# the player's own User-Agent is passed on: the watchdog's probe is recognised by it (it is not counted as a listener)
+			reverse_proxy icecast:8000 {
+				flush_interval -1
+				# nothing may cache, transform or buffer a live stream on the way (Cloudflare honours these)
+				header_down Cache-Control "no-store, no-transform"
+				header_down X-Accel-Buffering no
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy app:8790 {
+			lb_try_duration 10s
+			lb_try_interval 500ms
+		}
+	}
+}

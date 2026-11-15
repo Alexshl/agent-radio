@@ -10,6 +10,8 @@ export interface Config {
   piperModelsDir: string
   piperBin: string
   icecastUrl: string
+  // icecast admin login (listclients: the watchdog's monitor connections are not counted as listeners); null = they are counted
+  icecastAdmin: { user: string; password: string } | null
   engineUrl: string
   adminEmail: string | null
   ttsProvider: string
@@ -56,6 +58,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     piperModelsDir: env.PIPER_MODELS_DIR ?? `${dataDir}/piper`,
     piperBin: env.PIPER_BIN ?? 'piper',
     icecastUrl: (env.ICECAST_URL ?? 'http://localhost:8000').replace(/\/+$/, ''),
+    icecastAdmin: env.ICECAST_ADMIN_PASSWORD ? { user: env.ICECAST_ADMIN_USER ?? 'admin', password: env.ICECAST_ADMIN_PASSWORD } : null,
     engineUrl: (env.ENGINE_URL ?? 'http://localhost:8080').replace(/\/+$/, ''),
     adminEmail: env.ADMIN_EMAIL?.trim() || null,
     ttsProvider: env.TTS_PROVIDER ?? 'piper',

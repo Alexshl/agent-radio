@@ -3,6 +3,8 @@ import type { Db } from './db/client'
 import type { EngineApi } from './engine/client'
 import type { IcecastApi } from './icecast'
 import { Airing } from './airing'
+import { Delivery } from './delivery'
+import { ListenerTracker } from './listeners'
 import { Library } from './library'
 import { RateLimiter } from './lib/rate-limit'
 import { SecretStore, getAppSecret } from './lib/secrets'
@@ -32,11 +34,16 @@ export interface Deps {
   checkLimiter?: RateLimiter
   // one spoken message / uploaded file in flight per user
   userLock?: UserLock
+  // recent-listener grace (lastListenerSeenAt) and the confirmation of what was pushed to the engine
+  listeners?: ListenerTracker
+  delivery?: Delivery
 }
 
 export type FullDeps = Required<Deps>
 
 export function withDefaults(d: Deps): FullDeps {
+  const airing = d.airing ?? new Airing()
+  const listeners = d.listeners ?? new ListenerTracker(d.db, d.icecast)
   const secrets = new SecretStore(d.db, () => getAppSecret(d.config))
   return {
     ...d,
@@ -45,7 +52,9 @@ export function withDefaults(d: Deps): FullDeps {
     media: d.media ?? new FfmpegMedia(d.config.ffmpegBin, d.config.ffprobeBin),
     library: d.library ?? new Library(d.db, d.config),
     registry: d.registry ?? new TtsRegistry(d.db, d.config, secrets, d.fetchImpl),
-    airing: d.airing ?? new Airing(),
+    airing,
+    listeners,
+    delivery: d.delivery ?? new Delivery({ db: d.db, config: d.config, engine: d.engine, icecast: d.icecast, listeners, airing }),
     fetchImpl: d.fetchImpl ?? fetch,
     resolver: d.resolver ?? defaultResolver,
     transport: d.transport ?? nodeTransport,

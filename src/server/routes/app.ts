@@ -80,6 +80,7 @@ export function appRoutes(deps: FullDeps) {
     durationSec: m.durationSec,
     hasClip: !!m.clipPath && existsSync(m.clipPath),
     note: m.note,
+    reason: m.reason,
     createdAt: m.createdAt,
   })
 

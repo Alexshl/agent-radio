@@ -46,7 +46,11 @@ export function History() {
   const hosts = useMemo(() => [...new Set(all.map((m) => m.host).filter((h): h is string => !!h))].sort(), [all])
   const byHost = all.filter((m) => !host || m.host === host)
   const keep = (m: HistoryMessage, f: Filter) =>
-    f === 'all' ? true : f === 'audio' ? m.type === 'audio' : m.type !== 'audio' && m.status === f
+    f === 'all'
+      ? true
+      : f === 'audio'
+        ? m.type === 'audio'
+        : m.type !== 'audio' && (m.status === f || (f === 'aired' && (m.status === 'onair' || m.status === 'playing')))
   const shown = byHost.filter((m) => keep(m, filter))
   const count = (f: Filter) => byHost.filter((m) => keep(m, f)).length
 

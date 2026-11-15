@@ -352,7 +352,9 @@ function Messages({ r }: { r: Radio }) {
 }
 
 export function StatusBadge({ m }: { m: { status: string; type: string } }) {
-  if (m.status === 'aired') return <span className="bdg t-success">{S.history.badges.aired}</span>
+  if (m.status === 'waiting') return <span className="bdg">{S.history.badges.waiting}</span>
+  if (m.status === 'aired' || m.status === 'onair' || m.status === 'playing')
+    return <span className="bdg t-success">{S.history.badges.aired}</span>
   if (m.status === 'failed') return <span className="bdg t-danger">{S.history.badges.failed}</span>
   return <span className="bdg">{m.type === 'audio' ? S.history.badges.audioSkipped : S.history.badges.skipped}</span>
 }
@@ -488,9 +490,9 @@ function VoiceCard({ r }: { r: Radio }) {
     onError: fail,
   })
   const test = useMutation({
-    mutationFn: () => post<{ status: 'aired' | 'skipped' }>('/app/test'),
+    mutationFn: () => post<{ status: 'aired' | 'skipped' | 'queued' | 'waiting' }>('/app/test'),
     onSuccess: (res) => {
-      toast(res.status === 'aired' ? S.radio.testAired : S.radio.testSkipped)
+      toast(res.status === 'aired' ? S.radio.testAired : res.status === 'waiting' ? S.radio.testWaiting : S.radio.testSkipped)
       qc.invalidateQueries({ queryKey: ['radio'] })
     },
     onError: fail,

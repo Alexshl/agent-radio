@@ -1,8 +1,7 @@
 import { serve } from '@hono/node-server'
 import { createApp } from './app'
 import { bootstrap, seedAdmin, seedPresets } from './bootstrap'
-import { eq } from 'drizzle-orm'
-import { messages } from './db/schema'
+import { closeStale } from './delivery'
 import { cleanup } from './retention'
 import { relayRoutes } from './routes/relay'
 import { syncEngine } from './stations'
@@ -31,6 +30,13 @@ async function sync() {
 void sync()
 setInterval(sync, 5_000).unref()
 
+// listeners are sampled every 5 s (the recent-listener grace), delivery of held / pushed messages is checked every 2 s
+setInterval(() => void deps.listeners.observeAll().catch(() => {}), 5_000).unref()
+setInterval(
+  () => void deps.delivery.tick().catch((e) => console.error('delivery tick failed:', e instanceof Error ? e.message : e)),
+  2_000,
+).unref()
+
 // the music library: scan on start and then every hour (incremental: unchanged files are skipped); retention cleanup every hour
 const scan = () =>
   deps.library
@@ -58,7 +64,7 @@ refreshCatalog()
 setInterval(refreshCatalog, 6 * 3600_000).unref()
 
 // messages queued behind a slow voice when the app stopped will never air
-deps.db.update(messages).set({ status: 'failed' }).where(eq(messages.status, 'queued')).run()
+closeStale(deps.db)
 
 // local neural voices sidecar: which engines are loaded (the admin page and the voice lists read this)
 if (config.ttsLocalUrl) {

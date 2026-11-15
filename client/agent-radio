@@ -3,6 +3,7 @@
 #
 #   agent-radio status                    listeners and the summary language to write in
 #   agent-radio say "text"                speak a short summary (or: echo text | agent-radio say)
+#   agent-radio say --wait "text"         the same, then wait (up to 60 s) and print "played" or "not played: <reason>"
 #   agent-radio play file.mp3 ["intro"]   put an audio file on air (the intro is spoken before it)
 #   agent-radio config                    show the server address and the masked key
 #
@@ -208,17 +209,62 @@ cmd_status() {
   listeners=$(printf '%s' "$HTTP_BODY" | jget listeners)
   lang=$(printf '%s' "$HTTP_BODY" | jget lang)
   title=$(printf '%s' "$HTTP_BODY" | jget title)
+  listening=$(printf '%s' "$HTTP_BODY" | jget listening)
+  reconnecting=$(printf '%s' "$HTTP_BODY" | jget reconnecting)
   listeners=${listeners:-0}
   if [ "$up" = "true" ]; then echo "agent-radio: online"; else echo "agent-radio: offline"; fi
   echo "listeners: $listeners"
-  if [ "$listeners" -gt 0 ] 2>/dev/null; then echo "listening: yes"; else echo "listening: no"; fi
+  # "listening: yes" also covers a listener who dropped a moment ago (a player reconnecting): messages are held for them
+  if [ "$listening" = "true" ] || [ "$listeners" -gt 0 ] 2>/dev/null; then echo "listening: yes"; else echo "listening: no"; fi
+  [ "$reconnecting" = "true" ] && echo "reconnecting: yes"
   echo "language: ${lang:-uk}"
   [ -n "$title" ] && echo "now playing: $title"
   exit 0
 }
 
+# wait_played <message id>: polls the delivery of a message for up to AGENT_RADIO_WAIT (60) seconds
+wait_played() {
+  deadline=$(($(date +%s) + ${AGENT_RADIO_WAIT:-60}))
+  last=""
+  while :; do
+    if request GET "/api/messages/$1"; then
+      case $HTTP_CODE in
+        200)
+          last=$(printf '%s' "$HTTP_BODY" | jget status)
+          reason=$(printf '%s' "$HTTP_BODY" | jget reason)
+          [ "$reason" = null ] && reason=""
+          case $last in
+            played)
+              echo "agent-radio: played"
+              return
+              ;;
+            skipped | failed)
+              echo "agent-radio: not played: ${reason:-$last}"
+              return
+              ;;
+          esac
+          ;;
+        404)
+          echo "agent-radio: not played: unknown message"
+          return
+          ;;
+      esac
+    fi
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "agent-radio: not played: ${last:-unknown} after ${AGENT_RADIO_WAIT:-60}s"
+      return
+    fi
+    sleep 1
+  done
+}
+
 cmd_say() {
   need_config
+  wait=0
+  if [ "${1:-}" = "--wait" ]; then
+    wait=1
+    shift
+  fi
   if [ $# -gt 0 ] && [ "$1" != "-" ]; then
     text="$*"
   elif [ ! -t 0 ]; then
@@ -242,8 +288,17 @@ cmd_say() {
   case $status in
     aired) echo "agent-radio: aired" ;;
     queued) echo "agent-radio: queued (a slow voice is synthesizing, it goes on air when ready)" ;;
+    waiting) echo "agent-radio: waiting for listener (held, it goes on air when they reconnect; dropped after 3 minutes)" ;;
     *) echo "agent-radio: skipped (nobody listening)" ;;
   esac
+  if [ "$wait" = 1 ]; then
+    case $status in
+      aired | queued | waiting)
+        id=$(printf '%s' "$HTTP_BODY" | jget id)
+        [ -n "$id" ] && wait_played "$id"
+        ;;
+    esac
+  fi
   exit 0
 }
 
@@ -283,6 +338,8 @@ cmd_play() {
   status=$(printf '%s' "$HTTP_BODY" | jget status)
   if [ "$status" = "aired" ]; then
     echo "agent-radio: on air"
+  elif [ "$status" = "waiting" ]; then
+    echo "agent-radio: waiting for listener (held, it goes on air when they reconnect; dropped after 3 minutes)"
   else
     echo "agent-radio: saved to the history (nobody listening now)"
   fi
@@ -311,7 +368,7 @@ case $cmd in
   play) cmd_play "$@" ;;
   config) cmd_config ;;
   *)
-    say_err 'usage: agent-radio status | say "text" | play <file> ["intro"] | config'
+    say_err 'usage: agent-radio status | say [--wait] "text" | play <file> ["intro"] | config'
     exit 2
     ;;
 esac

@@ -26,6 +26,7 @@ const EMPTY: PlayerState = {
   loading: false,
   position: 0,
   duration: 0,
+  lag: 0,
   volume: 1,
   muted: false,
   reconnecting: false,

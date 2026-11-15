@@ -1,6 +1,6 @@
 // Airing a spoken message: shared by POST /api/say (agent key) and "send test to air" (browser).
-import { join, basename } from 'node:path'
 import { and, eq, gte, sql } from 'drizzle-orm'
+import { patchMessage } from './delivery'
 import type { FullDeps } from './deps'
 import { messages, type users } from './db/schema'
 import { HttpError } from './lib/http'
@@ -32,24 +32,27 @@ export function checkHourlyLimit(deps: FullDeps, userId: string) {
 
 // A slow engine (F5-TTS on a CPU) must not hold the agent's HTTP request: after config.sayWaitMs (15 s) the answer is 202 "queued" and the
 // clip goes on air when it is ready (if somebody still listens by then).
+// With nobody listening right now but somebody seen within the last 180 s (a player reconnecting, an app deploy) the message is held
+// ("waiting", 202) and goes on air when the listener is back; after 180 s it is skipped. `id` follows the delivery (GET /api/messages/:id).
 
-export type AirResult = { status: 'aired' | 'skipped' | 'queued'; listeners: number }
+export type AirResult = { id: string; status: 'aired' | 'skipped' | 'queued' | 'waiting'; listeners: number }
 
 export async function airMessage(
   deps: FullDeps,
   p: { user: UserRow; station: StationRow; session: string; host: string | null; text: string },
 ): Promise<AirResult> {
-  const { db, config, engine, icecast, tts } = deps
+  const { db, config, tts, delivery, listeners: tracker } = deps
   const { user, station: st, session, host, text } = p
   checkHourlyLimit(deps, user.id)
-  const listeners = await icecast.listeners(st.id)
-  if (listeners === null) throw new HttpError(503, 'engine_unavailable', 'Streaming server is not reachable')
+  const ls = await tracker.observe(st.id)
+  if (ls.listeners === null) throw new HttpError(503, 'engine_unavailable', 'Streaming server is not reachable')
+  const listeners = ls.listeners
   const base = { id: newId(), userId: user.id, session, host, text, type: 'voice', createdAt: nowIso() }
-  if (listeners === 0) {
+  if (listeners === 0 && !ls.recentlyListening) {
     db.insert(messages)
-      .values({ ...base, status: 'skipped', clipPath: null })
+      .values({ ...base, status: 'skipped', clipPath: null, reason: 'nobody_listening' })
       .run()
-    return { status: 'skipped', listeners }
+    return { id: base.id, status: 'skipped', listeners }
   }
   const release = deps.userLock.acquire(user.id)
   const synth = tts.makeClip({
@@ -59,14 +62,11 @@ export async function airMessage(
     chime: st.chime,
     rate: user.speechRate,
   })
-  const play = async (clip: string) => {
-    await engine.push(st.id, join(config.engineSharedDir, 'clips', basename(clip)))
-  }
   let timer: ReturnType<typeof setTimeout> | undefined
   const slow = new Promise<'slow'>((resolve) => {
     timer = setTimeout(() => resolve('slow'), config.sayWaitMs)
   })
-  let clip: string | null = null
+  let clip: string
   try {
     const first = await Promise.race([synth, slow])
     clearTimeout(timer)
@@ -75,38 +75,42 @@ export async function airMessage(
         .values({ ...base, status: 'queued', clipPath: null })
         .run()
       void finishQueued(deps, base.id, st.id, synth).finally(release)
-      return { status: 'queued', listeners }
+      return { id: base.id, status: 'queued', listeners }
     }
     clip = first
-    await play(clip)
   } catch (e) {
     clearTimeout(timer)
     console.error('say failed:', e instanceof Error ? e.message : e)
     db.insert(messages)
-      .values({ ...base, status: 'failed', clipPath: clip, clipCreatedAt: clip ? nowIso() : null })
+      .values({ ...base, status: 'failed', reason: 'tts_failed' })
       .run()
     release()
     throw new HttpError(502, 'tts_failed', 'Could not synthesize or play the message')
   }
-  release()
   db.insert(messages)
-    .values({ ...base, status: 'aired', clipPath: clip, clipCreatedAt: nowIso() })
+    .values({ ...base, status: 'waiting', clipPath: clip, clipCreatedAt: nowIso() })
     .run()
-  return { status: 'aired', listeners }
+  try {
+    const status = await delivery.offer(base.id, st.id)
+    return { id: base.id, status: status === 'onair' ? 'aired' : status, listeners }
+  } catch (e) {
+    console.error('say failed:', e instanceof Error ? e.message : e)
+    patchMessage(db, base.id, { status: 'failed', reason: 'push_failed' })
+    throw new HttpError(502, 'tts_failed', 'Could not synthesize or play the message')
+  } finally {
+    release()
+  }
 }
 
-// The clip of a queued message is ready (or failed): air it when somebody still listens, else keep it in the history as skipped.
+// The clip of a queued message is ready (or failed): air it when somebody listens (or hold it for a reconnecting listener).
 async function finishQueued(deps: FullDeps, id: string, stationId: string, synth: Promise<string>) {
-  const { db, config, engine, icecast } = deps
-  const set = (v: Partial<typeof messages.$inferInsert>) => db.update(messages).set(v).where(eq(messages.id, id)).run()
+  const { db, delivery } = deps
   try {
     const clip = await synth
-    const now = (await icecast.listeners(stationId)) ?? 0
-    if (now === 0) return set({ status: 'skipped', clipPath: clip, clipCreatedAt: nowIso() })
-    await engine.push(stationId, join(config.engineSharedDir, 'clips', basename(clip)))
-    set({ status: 'aired', clipPath: clip, clipCreatedAt: nowIso() })
+    patchMessage(db, id, { status: 'waiting', clipPath: clip, clipCreatedAt: nowIso() })
+    await delivery.offer(id, stationId)
   } catch (e) {
     console.error('queued say failed:', e instanceof Error ? e.message : e)
-    set({ status: 'failed' })
+    patchMessage(db, id, { status: 'failed', reason: 'tts_failed' })
   }
 }

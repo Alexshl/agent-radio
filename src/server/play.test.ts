@@ -48,7 +48,7 @@ describe('POST /api/play', () => {
     >
     expect(row).toMatchObject({
       type: 'audio',
-      status: 'aired',
+      status: 'onair',
       text: 'Новий мікс',
       session: 'tu-mani',
       host: 'studio-mac',
@@ -135,7 +135,7 @@ describe('POST /api/play', () => {
     const a = await userWithKey(t, 'a@x.io')
     const b = await userWithKey(t, 'b@x.io')
     await upload(t, a.token, { fields: { title: 'for A', userId: b.user.id, stationId: b.station.id } })
-    expect(t.engine.pushTrack).toHaveBeenCalledWith(a.station.id, expect.any(String))
+    expect(t.engine.pushTrack).toHaveBeenCalledWith(a.station.id, expect.any(String), expect.any(String))
     expect(t.engine.pushTrack).not.toHaveBeenCalledWith(b.station.id, expect.anything())
     await t.req('/api/auth/login', { method: 'POST', json: { email: 'b@x.io', password: 'correct horse battery' } })
     const cookieB = await login(t, 'b@x.io')

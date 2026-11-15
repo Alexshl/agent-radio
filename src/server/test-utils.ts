@@ -7,8 +7,8 @@ import { createApp } from './app'
 import { loadConfig } from './config'
 import { openDb } from './db/client'
 import { users } from './db/schema'
-import type { Deps } from './deps'
-import type { EngineApi } from './engine/client'
+import { type Deps, withDefaults } from './deps'
+import type { EngineApi, EngineMsgState } from './engine/client'
 import type { IcecastApi } from './icecast'
 import { createApiKey } from './lib/api-keys'
 import type { Resolver, Transport } from './lib/safe-fetch'
@@ -65,6 +65,7 @@ export function setup(opts: { listeners?: number | null; env?: Record<string, st
     setDuck: vi.fn(async () => {}),
     setLevels: vi.fn(async () => {}),
     restart: vi.fn(async () => {}),
+    msgStates: vi.fn(async (): Promise<EngineMsgState[]> => []),
   } satisfies EngineApi
   const state = { listeners: opts.listeners === undefined ? 1 : opts.listeners }
   const icecast: IcecastApi = { listeners: vi.fn(async () => state.listeners), isUp: async () => true, title: async () => 'ICY title' }
@@ -102,7 +103,8 @@ export function setup(opts: { listeners?: number | null; env?: Record<string, st
     resolver: fakeResolver,
     transport: opts.transport,
   }
-  const app = createApp(deps)
+  const full = withDefaults(deps)
+  const app = createApp(full)
   const req = (path: string, init: RequestInit & { cookie?: string; json?: unknown; origin?: string | null } = {}) => {
     const headers = new Headers(init.headers)
     if (init.cookie) headers.set('Cookie', init.cookie)
@@ -110,7 +112,23 @@ export function setup(opts: { listeners?: number | null; env?: Record<string, st
     if (init.origin !== null && (init.method ?? 'GET') !== 'GET') headers.set('Origin', init.origin ?? ORIGIN)
     return app.request(`${ORIGIN}${path}`, { ...init, headers, body: init.json !== undefined ? JSON.stringify(init.json) : init.body })
   }
-  return { app, db, deps, registry, config, engine, icecast, state, makeClip, media, library, req, dir, music }
+  return {
+    app,
+    db,
+    deps: full,
+    delivery: full.delivery,
+    registry,
+    config,
+    engine,
+    icecast,
+    state,
+    makeClip,
+    media,
+    library,
+    req,
+    dir,
+    music,
+  }
 }
 export type T = ReturnType<typeof setup>
 

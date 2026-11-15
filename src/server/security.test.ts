@@ -398,7 +398,7 @@ describe('abuse limits', () => {
     expect(await r.json()).toMatchObject({ status: 'aired' })
     expect(t.media.makeTrack).toHaveBeenCalledWith(expect.objectContaining({ intro: null }))
     expect(t.engine.pushTrack).toHaveBeenCalledTimes(1)
-    expect(t.db.$client.prepare('select status, note from messages').get()).toEqual({ status: 'aired', note: 'intro_failed' })
+    expect(t.db.$client.prepare('select status, note from messages').get()).toEqual({ status: 'onair', note: 'intro_failed' })
   })
 
   it('library paging is validated', async () => {
