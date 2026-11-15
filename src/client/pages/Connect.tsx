@@ -3,6 +3,7 @@ import { CircleCheck, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { del, get, post } from '../api/client'
 import type { ApiKey } from '../api/types'
+import { ShortcutsCard } from '../components/ShortcutsCard'
 import { useToast } from '../components/Toast'
 import { ErrorBox, Loading, PageHead, copyText, useErrorToast } from '../components/ui'
 import { S } from '../i18n'
@@ -201,6 +202,8 @@ export function Connect() {
           </div>
         </div>
       </section>
+
+      <ShortcutsCard />
     </Shell>
   )
 }

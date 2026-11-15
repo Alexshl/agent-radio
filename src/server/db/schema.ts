@@ -268,3 +268,14 @@ export const pronunciations = sqliteTable(
   },
   (t) => [index('pronunciations_user').on(t.userId), index('pronunciations_scope').on(t.scope)],
 )
+
+// "Быстрые команды": one control token per user (iOS Shortcuts and the like). It can only replay, switch the source and read the status.
+// Only sha256 of the token is stored; the token itself is shown once. Regenerating replaces the row, revoking deletes it.
+export const controlTokens = sqliteTable('control_tokens', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id),
+  tokenHash: text('token_hash').notNull().unique(),
+  createdAt: text('created_at').notNull(),
+  lastUsedAt: text('last_used_at'),
+})

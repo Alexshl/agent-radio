@@ -57,6 +57,13 @@
       "when": 1794810000000,
       "tag": "0007_pronunciations",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794820000000,
+      "tag": "0008_control_tokens",
+      "breakpoints": true
     }
   ]
 }

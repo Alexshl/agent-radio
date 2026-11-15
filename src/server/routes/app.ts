@@ -9,6 +9,7 @@ import type { FullDeps } from '../deps'
 import type { AppEnv } from '../env'
 import { SUMMARY_LANGS } from '../lang'
 import { createApiKey, listApiKeys, revokeApiKey } from '../lib/api-keys'
+import { controlTokenInfo, issueControlToken, revokeControlToken } from '../lib/control-token'
 import { csrfGuard, requireSession } from '../lib/auth'
 import { RateLimiter } from '../lib/rate-limit'
 import { HttpError, badRequest, notFound } from '../lib/http'
@@ -252,6 +253,20 @@ export function appRoutes(deps: FullDeps) {
 
   r.delete('/keys/:id', (c) => {
     if (!revokeApiKey(db, c.req.param('id'), c.get('user').id)) throw notFound('Key not found')
+    return c.json({ ok: true })
+  })
+
+  // ---- control token ("Быстрые команды"): the secret is returned once, by the call that creates / regenerates it ----
+
+  r.get('/control-token', (c) => c.json({ token: controlTokenInfo(db, c.get('user').id) }))
+
+  r.post('/control-token', async (c) => {
+    const { token, info } = await issueControlToken(db, c.get('user').id)
+    return c.json({ secret: token, token: info }, 201)
+  })
+
+  r.delete('/control-token', (c) => {
+    if (!revokeControlToken(db, c.get('user').id)) throw notFound('No control token')
     return c.json({ ok: true })
   })
 
