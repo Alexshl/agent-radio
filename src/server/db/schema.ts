@@ -18,7 +18,7 @@ export const users = sqliteTable(
     lastLoginAt: text('last_login_at'),
     // per-user voice settings: voice is '<provider>:<voice id>', null = the server default
     voice: text('voice'),
-    // summary language the agent writes in: uk | ru | en
+    // summary language the agent writes in: uk | ru | en | lv | et | lt | de | sv (SUMMARY_LANGS in server/lang.ts)
     lang: text('lang').notNull().default('uk'),
     speakSession: integer('speak_session', { mode: 'boolean' }).notNull().default(true),
     // speech rate multiplier 0.8..1.6

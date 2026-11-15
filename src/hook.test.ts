@@ -73,6 +73,26 @@ describe('agent-radio-hook.sh', () => {
     expect(JSON.parse(run('stop', [user('hi')])).reason).toContain('in English')
   })
 
+  it('answers in lv and de, and falls back to en for an unknown code', () => {
+    listening('lv')
+    const lv = JSON.parse(run('stop', [user('hi')])).reason
+    expect(lv).toContain('latviešu valodā')
+    expect(lv).toContain('AGENT_RADIO_SESSION="<šīs sesijas projekts un loma')
+    listening('de')
+    const de = JSON.parse(run('stop', [user('hi')])).reason
+    expect(de).toContain('auf Deutsch')
+    expect(de).toContain('AGENT_RADIO_SESSION="<Projekt und Rolle dieser Sitzung')
+    listening('xx')
+    expect(JSON.parse(run('stop', [user('hi')])).reason).toContain('in English')
+    for (const code of ['et', 'lt', 'sv']) {
+      listening(code)
+      const reason = JSON.parse(run('question', [user('hi')])).hookSpecificOutput.permissionDecisionReason
+      expect(reason).toContain('AGENT_RADIO_SESSION=')
+      expect(reason).not.toContain('{action}')
+      expect(reason).not.toContain('in English')
+    }
+  })
+
   it('does not loop when stop_hook_active', () => {
     listening()
     expect(run('stop', [user('hi')], { stop_hook_active: true })).toBe('')

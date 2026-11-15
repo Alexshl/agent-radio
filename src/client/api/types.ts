@@ -58,7 +58,7 @@ export interface Radio {
     m3uUrl: string
     webStreamPath: string
   }
-  settings: { voice: string | null; lang: 'uk' | 'ru' | 'en'; speakSession: boolean; speechRate: number }
+  settings: { voice: string | null; lang: string; speakSession: boolean; speechRate: number }
   allowOwnUrls: boolean
   defaultVoice: string
   presets: Preset[]

@@ -176,6 +176,9 @@ export const de: Strings = {
     voice: 'Stimme',
     voiceDefault: 'Standard',
     summaryLang: 'Sprache der Zusammenfassungen',
+    voiceLangMismatch: (voice: string, lang: string) =>
+      `Die Stimme „${voice}“ ist nicht für ${lang} gedacht: Die Aussprache kann falsch sein.`,
+    voiceLangUse: (voice: string) => `${voice} verwenden`,
     duckLabel: 'Absenkung unter der Stimme',
     speechRate: 'Sprechtempo',
     levelsTitle: 'Balance',

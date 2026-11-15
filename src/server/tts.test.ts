@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { loadConfig } from './config'
 import { openDb } from './db/client'
+import { SUMMARY_LANGS } from './lang'
 import { SecretStore } from './lib/secrets'
 import { TtsRegistry, TtsService, applyTempo } from './tts'
 import { AzureProvider } from './tts/azure'
@@ -222,6 +223,31 @@ describe('/api/say with the cloud fallback (route level)', () => {
     expect(t.makeClip).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'Сессия invoa. Готово', voice: 'piper:ru_RU-dmitri-medium', lang: 'ru' }),
     )
+  })
+
+  it('a voice of another language still airs: /api/say does not fail', async () => {
+    const t = setup({ listeners: 1 })
+    const { token } = await (await import('./test-utils')).userWithKey(t, 'a@x.io')
+    t.db.$client.prepare("update users set lang = 'lv', voice = 'piper:ru_RU-dmitri-medium'").run()
+    const res = await t.req('/api/say', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      json: { session: 'invoa', text: 'Gatavs' },
+      origin: null,
+    })
+    expect(res.status).toBe(200)
+    expect(t.makeClip).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Sesija invoa. Gatavs', voice: 'piper:ru_RU-dmitri-medium', lang: 'lv' }),
+    )
+  })
+
+  it('every summary language has a piper fallback voice', async () => {
+    const { registry } = service()
+    for (const lang of SUMMARY_LANGS) {
+      expect(registry.fallback(lang).voice).toMatch(new RegExp(`^${lang}_`))
+      expect(registry.defaultVoiceKey(lang)).toMatch(new RegExp(`^piper:${lang}_`))
+    }
+    expect(registry.piperVoices().some((v) => v.lang === 'lv')).toBe(true)
   })
 
   it('speakSession off: the text as is', async () => {

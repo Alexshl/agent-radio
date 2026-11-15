@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { messages, presets, stations, users } from '../db/schema'
 import type { FullDeps } from '../deps'
 import type { AppEnv } from '../env'
+import { SUMMARY_LANGS } from '../lang'
 import { createApiKey, listApiKeys, revokeApiKey } from '../lib/api-keys'
 import { csrfGuard, requireSession } from '../lib/auth'
 import { RateLimiter } from '../lib/rate-limit'
@@ -44,7 +45,7 @@ const pagingQuery = z.object({
 
 const settingsBody = z.object({
   voice: z.string().max(200).nullable().optional(),
-  lang: z.enum(['uk', 'ru', 'en']).optional(),
+  lang: z.enum(SUMMARY_LANGS).optional(),
   speakSession: z.boolean().optional(),
   chime: z.boolean().optional(),
   duckDb: z.number().min(0).max(40).optional(),
@@ -220,12 +221,18 @@ export function appRoutes(deps: FullDeps) {
 
   r.post('/test', async (c) => {
     const user = c.get('user')
-    const text = {
+    const texts: Record<string, string> = {
       uk: 'Це перевірка ефіру. Якщо ви це чуєте — все працює.',
       ru: 'Это проверка эфира. Если вы это слышите, всё работает.',
       en: 'This is an on-air test. If you hear it, everything works.',
-    }[user.lang]
-    const res = await airMessage(deps, { user, station: stationOf(user.id), session: 'test', host: 'browser', text: text ?? '' })
+      lv: 'Šī ir ēfira pārbaude. Ja to dzirdat, viss darbojas.',
+      et: 'See on eetri test. Kui seda kuulete, siis kõik töötab.',
+      lt: 'Tai eterio patikra. Jei tai girdite, viskas veikia.',
+      de: 'Das ist ein Sendetest. Wenn Sie das hören, funktioniert alles.',
+      sv: 'Det här är ett sändningstest. Om du hör det fungerar allt.',
+    }
+    const text = texts[user.lang] ?? texts.en ?? ''
+    const res = await airMessage(deps, { user, station: stationOf(user.id), session: 'test', host: 'browser', text })
     return c.json(res)
   })
 
@@ -416,7 +423,7 @@ export function appRoutes(deps: FullDeps) {
   const previewLimiter = new RateLimiter(10)
   r.post('/pronunciations/preview', async (c) => {
     const body = z
-      .object({ text: z.string().trim().min(1).max(300), lang: z.enum(['uk', 'ru', 'en']).optional() })
+      .object({ text: z.string().trim().min(1).max(300), lang: z.enum(SUMMARY_LANGS).optional() })
       .safeParse(await c.req.json().catch(() => null))
     if (!body.success) throw badRequest('invalid_body', 'Expected {text}')
     const user = c.get('user')

@@ -6,13 +6,8 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { CatalogVoice } from './piper-catalog'
 import type { TtsProvider, TtsRequest } from './types'
+import { PIPER_DEFAULT_BY_LANG } from './voices'
 
-const DEFAULT_VOICES: Record<string, string> = {
-  uk: 'uk_UA-mykyta-high',
-  ru: 'ru_RU-dmitri-medium',
-  en: 'en_US-lessac-medium',
-  de: 'de_DE-thorsten-medium',
-}
 const HF = 'https://huggingface.co/rhasspy/piper-voices/resolve/main'
 
 // 'en_GB-vctk-medium#12' = model + speaker id of a multi-speaker model
@@ -59,7 +54,7 @@ export class PiperProvider implements TtsProvider {
   ) {}
 
   private voiceFor(req: Pick<TtsRequest, 'voice' | 'lang'>): string {
-    const v = req.voice ?? DEFAULT_VOICES[req.lang]
+    const v = req.voice ?? PIPER_DEFAULT_BY_LANG[req.lang]
     if (!v) throw new Error(`no default piper voice for language ${req.lang}`)
     return v
   }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SUMMARY_LANGS } from './lang'
 import { addUser, login, setup, userWithKey } from './test-utils'
 
 describe('source policy', () => {
@@ -72,6 +73,21 @@ describe('user settings', () => {
     expect(res.status).toBe(200)
     const st = (await (await t.req('/api/status', { headers: { Authorization: `Bearer ${token}` } })).json()) as Record<string, unknown>
     expect(st).toMatchObject({ lang: 'en', voice: 'openai:alloy', speakSession: false, chime: false })
+  })
+
+  it('accepts each of the 8 summary languages, returns it in /api/status and rejects an unknown one', async () => {
+    const t = setup()
+    const { token } = await userWithKey(t, 'a@x.io')
+    const cookie = await login(t, 'a@x.io')
+    for (const lang of SUMMARY_LANGS) {
+      const res = await t.req('/api/app/settings', { cookie, method: 'PATCH', json: { lang } })
+      expect(res.status).toBe(200)
+      const st = (await (await t.req('/api/status', { headers: { Authorization: `Bearer ${token}` } })).json()) as Record<string, unknown>
+      expect(st).toMatchObject({ lang })
+    }
+    const bad = await t.req('/api/app/settings', { cookie, method: 'PATCH', json: { lang: 'xx' } })
+    expect(bad.status).toBe(400)
+    expect((await t.req('/api/app/pronunciations/preview', { cookie, method: 'POST', json: { text: 'x', lang: 'xx' } })).status).toBe(400)
   })
 
   it('only voices the admin enabled can be chosen', async () => {

@@ -101,8 +101,43 @@ REASONS = {
         "no markdown, code, paths or URLs. Then carry on as planned. Do not mention this check to the user.",
         {"question": "ask a question", "stop": "end your turn"},
     ),
+    "lv": (
+        "agent-radio: lietotājs šobrīd klausās radio. Pirms {action}, "
+        "nosūti ēterā īsu šī gājiena kopsavilkumu latviešu valodā: "
+        "AGENT_RADIO_SESSION=\"<šīs sesijas projekts un loma, 2–3 vārdi, piem. shop orķestrētājs>\" agent-radio say \"…\" — 1–4 sarunvalodas teikumi: kas izdarīts un ko vajag no lietotāja, "
+        "bez markdown, koda, ceļiem un URL. Pēc tam turpini, kā plānoji. Lietotājam par šo pārbaudi nerakstī.",
+        {"question": "uzdot jautājumu", "stop": "pabeigt gājienu"},
+    ),
+    "et": (
+        "agent-radio: kasutaja kuulab praegu raadiot. Enne kui {action}, "
+        "saada eetrisse lühike kokkuvõte sellest käigust eesti keeles: "
+        "AGENT_RADIO_SESSION=\"<selle sessiooni projekt ja roll, 2–3 sõna, nt shop orkestraator>\" agent-radio say \"…\" — 1–4 kõnekeelset lauset: mis sai tehtud ja mida on kasutajalt vaja, "
+        "ilma markdowni, koodi, teede ja URL-ideta. Seejärel jätka nagu kavatsesid. Kasutajale sellest kontrollist ei kirjuta.",
+        {"question": "küsid küsimuse", "stop": "lõpetad käigu"},
+    ),
+    "lt": (
+        "agent-radio: vartotojas dabar klausosi radijo. Prieš {action}, "
+        "išsiųsk į eterį trumpą šio etapo santrauką lietuvių kalba: "
+        "AGENT_RADIO_SESSION=\"<šios sesijos projektas ir vaidmuo, 2–3 žodžiai, pvz. shop orkestratorius>\" agent-radio say \"…\" — 1–4 šnekamosios kalbos sakiniai: kas padaryta ir ko reikia iš vartotojo, "
+        "be markdown, kodo, kelių ir URL. Tada tęsk, kaip planavai. Vartotojui apie šį patikrinimą nerašyk.",
+        {"question": "užduodamas klausimą", "stop": "baigdamas etapą"},
+    ),
+    "de": (
+        "agent-radio: Der Nutzer hört gerade Radio. Bevor du {action}, "
+        "sende eine kurze Zusammenfassung dieses Durchgangs auf Deutsch auf Sendung: "
+        "AGENT_RADIO_SESSION=\"<Projekt und Rolle dieser Sitzung, 2–3 Wörter, z. B. shop Orchestrator>\" agent-radio say \"…\" – 1–4 gesprochene Sätze: was erledigt wurde und was du vom Nutzer brauchst, "
+        "ohne Markdown, Code, Pfade und URLs. Mach dann wie geplant weiter. Erwähne diese Prüfung dem Nutzer gegenüber nicht.",
+        {"question": "eine Frage stellst", "stop": "den Durchgang beendest"},
+    ),
+    "sv": (
+        "agent-radio: användaren lyssnar på radion just nu. Innan du {action}, "
+        "skicka en kort sammanfattning av den här vändan i etern på svenska: "
+        "AGENT_RADIO_SESSION=\"<projekt och roll för den här sessionen, 2–3 ord, t.ex. shop orkestrerare>\" agent-radio say \"…\" – 1–4 talspråkliga meningar: vad som är gjort och vad du behöver av användaren, "
+        "utan markdown, kod, sökvägar och URL:er. Fortsätt sedan som planerat. Nämn inte den här kontrollen för användaren.",
+        {"question": "ställer en fråga", "stop": "avslutar vändan"},
+    ),
 }
-template, actions = REASONS.get(lang, REASONS["uk"])
+template, actions = REASONS.get(lang, REASONS["en"])
 reason = template.format(action=actions["question" if mode == "question" else "stop"])
 if mode == "question":
     print(json.dumps({"hookSpecificOutput": {

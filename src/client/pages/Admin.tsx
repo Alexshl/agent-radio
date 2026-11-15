@@ -6,7 +6,8 @@ import { useMe } from '../api/hooks'
 import { usePlayer } from '../components/Player'
 import { useToast } from '../components/Toast'
 import { ErrorBox, Loading, PageHead, Seg, Switch, copyText, useErrorToast } from '../components/ui'
-import { S } from '../i18n'
+import { LANGS, LANG_NAMES, S } from '../i18n'
+import type { Lang } from '../i18n'
 import { Shell } from '../layouts/Shell'
 import { fmtBytes, fmtDate, fmtDb, fmtRate, fmtWhen, initials } from '../lib/format'
 
@@ -666,7 +667,7 @@ function PiperCard() {
     onError: fail,
   })
   const [other, setOther] = useState('')
-  const tabs = ['uk', 'ru', 'en', 'all'].map((id) => ({ id, label: S.admin.tts.piper.langs[id] ?? id }))
+  const tabs = [...LANGS, 'all'].map((id) => ({ id, label: S.admin.tts.piper.langs[id] ?? LANG_NAMES[id as Lang] ?? id }))
   const voices = (q.data?.voices ?? []).filter((v) => (lang === 'all' ? !other || v.lang === other : v.lang === lang))
   return (
     <section className="card">
@@ -680,7 +681,7 @@ function PiperCard() {
         <div className="muted" style={{ fontSize: 12.5 }}>
           {S.admin.tts.piper.hint}
         </div>
-        <Seg value={lang} options={tabs} onChange={setLang} label={S.admin.tts.piper.title} />
+        <Seg value={lang} options={tabs} onChange={setLang} label={S.admin.tts.piper.title} style={{ flexWrap: 'wrap' }} />
         {lang === 'all' && (
           <select className="inp" aria-label={S.admin.tts.piper.langs.all} value={other} onChange={(e) => setOther(e.target.value)}>
             <option value="">{S.admin.tts.piper.langs.all}</option>

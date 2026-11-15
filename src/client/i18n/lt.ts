@@ -176,6 +176,8 @@ export const lt: Strings = {
     voice: 'Balsas',
     voiceDefault: 'Numatytasis',
     summaryLang: 'Santraukų kalba',
+    voiceLangMismatch: (voice: string, lang: string) => `Balsas „${voice}“ nepritaikytas kalbai ${lang}: tarimas gali būti neteisingas.`,
+    voiceLangUse: (voice: string) => `Pasirinkti ${voice}`,
     duckLabel: 'Nutildymas po balsu',
     speechRate: 'Kalbos greitis',
     levelsTitle: 'Balansas',

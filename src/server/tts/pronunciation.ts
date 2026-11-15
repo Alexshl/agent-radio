@@ -7,8 +7,10 @@
 //                                      so a `+` before the vowel would stress the wrong thing there)
 //   piper, azure, openai, gemini    -> marks removed (plain text)
 
+import { SUMMARY_LANGS } from '../lang'
+
 export interface PronEntry {
-  // ru | uk | en | *
+  // one of SUMMARY_LANGS | *
   lang: string
   match: string
   replacement: string
@@ -18,7 +20,8 @@ export interface PronEntry {
 
 export type StressTarget = 'plus-before' | 'acute-after' | 'plain'
 
-const VOWELS = 'аеёиоуыэюяіїєaeiouyАЕЁИОУЫЭЮЯІЇЄAEIOUY'
+// Cyrillic + Latin vowels, including the diacritic ones of lv/et/lt/de/sv (ā ē ī ū ō õ ä ö ü å ė į ų ą ę) and common accented forms
+const VOWELS = 'аеёиоуыэюяіїєАЕЁИОУЫЭЮЯІЇЄaeiouyAEIOUYāēīūōõäöüåėįųąęĀĒĪŪŌÕÄÖÜÅĖĮŲĄĘáàâéèêíìîóòôúùûÿÁÀÂÉÈÊÍÌÎÓÒÔÚÙÛŸ'
 // `+` right before a vowel letter is a stress mark ("C++", "2+2" are left alone)
 const MARK = new RegExp(`\\+(?=[${VOWELS}])`, 'g')
 const MARKED_VOWEL = new RegExp(`\\+([${VOWELS}])`, 'g')
@@ -100,4 +103,4 @@ export function prepareSpeech(text: string, entries: PronEntry[], lang: string, 
   return renderStress(applyPronunciations(text, entries, lang), target)
 }
 
-export const PRON_LANGS = ['ru', 'uk', 'en', '*'] as const
+export const PRON_LANGS = [...SUMMARY_LANGS, '*'] as const

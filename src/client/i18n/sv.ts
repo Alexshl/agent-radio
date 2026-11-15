@@ -176,6 +176,8 @@ export const sv: Strings = {
     voice: 'Röst',
     voiceDefault: 'Standard',
     summaryLang: 'Språk för sammanfattningar',
+    voiceLangMismatch: (voice: string, lang: string) => `Rösten "${voice}" är inte avsedd för ${lang}: uttalet kan bli fel.`,
+    voiceLangUse: (voice: string) => `Använd ${voice}`,
     duckLabel: 'Dämpning under rösten',
     speechRate: 'Talhastighet',
     levelsTitle: 'Balans',

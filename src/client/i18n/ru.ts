@@ -173,6 +173,9 @@ export const ru = {
     voice: 'Голос',
     voiceDefault: 'По умолчанию',
     summaryLang: 'Язык сводок',
+    voiceLangMismatch: (voice: string, lang: string) =>
+      `Голос «${voice}» не предназначен для языка «${lang}»: произношение может быть неверным.`,
+    voiceLangUse: (voice: string) => `Выбрать ${voice}`,
     duckLabel: 'Приглушение под голосом',
     speechRate: 'Скорость речи',
     levelsTitle: 'Баланс',

@@ -20,7 +20,7 @@ Do not use it for every small step, for questions that need a long answer, or fo
 
 1. Run `agent-radio status`.
    - Output says `offline`, or `listening: no`, or the command is missing: **do nothing and do not mention the radio**. Nobody would hear it.
-   - Otherwise note the line `language: uk|ru|en`: write the summary in that language.
+   - Otherwise note the line `language: uk|ru|en|lv|et|lt|de|sv`: write the summary in that language.
 2. Write 1 to 4 spoken-style sentences: what happened, what the result is, what you need from the user (if anything).
    - Plain speech. No markdown, no code, no file paths, no URLs, no hashes: say "the migration script", not its path.
    - Numbers in words where natural ("двенадцать статей", "twelve articles"); short sentences; no lists.

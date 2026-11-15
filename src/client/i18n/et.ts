@@ -176,6 +176,8 @@ export const et: Strings = {
     voice: 'Hääl',
     voiceDefault: 'Vaikimisi',
     summaryLang: 'Kokkuvõtete keel',
+    voiceLangMismatch: (voice: string, lang: string) => `Hääl "${voice}" ei ole mõeldud keelele ${lang}: hääldus võib olla vale.`,
+    voiceLangUse: (voice: string) => `Vali ${voice}`,
     duckLabel: 'Vaigistus hääle all',
     speechRate: 'Kõnekiirus',
     levelsTitle: 'Tasakaal',

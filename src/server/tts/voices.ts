@@ -7,7 +7,7 @@ export interface VoiceInfo {
   provider: ProviderId
   id: string
   label: string
-  // uk | ru | en | multi (piper: the language family of the model)
+  // uk | ru | en | lv | et | lt | de | sv | multi (piper: the language family of the model)
   lang: string
   // piper only: x_low | low | medium | high
   quality?: string
@@ -49,4 +49,9 @@ export const PIPER_DEFAULT_BY_LANG: Record<string, string> = {
   uk: 'uk_UA-mykyta-high',
   ru: 'ru_RU-dmitri-medium',
   en: 'en_US-lessac-medium',
+  lv: 'lv_LV-aivars-medium',
+  et: 'et_EE-news-medium',
+  lt: 'lt_LT-ingute-medium',
+  de: 'de_DE-thorsten-medium',
+  sv: 'sv_SE-alma-medium',
 }
