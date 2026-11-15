@@ -32,6 +32,8 @@ export interface Deps {
   transport?: Transport
   // 10 stream-address checks per minute per user
   checkLimiter?: RateLimiter
+  // 30 control-token requests ("Быстрые команды") per minute per token
+  controlLimiter?: RateLimiter
   // one spoken message / uploaded file in flight per user
   userLock?: UserLock
   // recent-listener grace (lastListenerSeenAt) and the confirmation of what was pushed to the engine
@@ -59,6 +61,7 @@ export function withDefaults(d: Deps): FullDeps {
     resolver: d.resolver ?? defaultResolver,
     transport: d.transport ?? nodeTransport,
     checkLimiter: d.checkLimiter ?? new RateLimiter(10),
+    controlLimiter: d.controlLimiter ?? new RateLimiter(30),
     userLock: d.userLock ?? new UserLock(),
   }
 }

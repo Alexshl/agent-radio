@@ -97,3 +97,8 @@ export interface ReplayResult {
   listeners: number
   ids: string[]
 }
+
+export interface ControlTokenInfo {
+  createdAt: string
+  lastUsedAt: string | null
+}

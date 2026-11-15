@@ -6,6 +6,7 @@ import { adminRoutes } from './routes/admin'
 import { apiRoutes } from './routes/api'
 import { appRoutes } from './routes/app'
 import { authRoutes } from './routes/auth'
+import { controlRoutes } from './routes/control'
 import { internalRoutes } from './routes/internal'
 import { streamRoutes } from './routes/stream'
 import { refreshFolderPlaylists } from './stations'
@@ -75,6 +76,7 @@ export function createApp(input: Deps & { fetchStream?: typeof fetch }) {
   app.route('/api/auth', authRoutes(deps))
   app.route('/api/app', appRoutes(deps))
   app.route('/api/admin', adminRoutes(deps))
+  app.route('/api/control', controlRoutes(deps))
   app.route('/api', apiRoutes(deps))
   app.route('/internal', internalRoutes(deps))
   app.route('/stream', streamRoutes(deps.db, deps.config, input.fetchStream))
