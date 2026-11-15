@@ -119,6 +119,11 @@ function PasskeysCard() {
     onError: (e) => {
       // closing the browser dialog is not an error
       if (e instanceof Error && e.name === 'NotAllowedError') return toast(S.security.cancelled)
+      // the device already holds a passkey for this account (usually synced via iCloud Keychain / Google)
+      const code = (e as { code?: string }).code
+      if (code === 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED' || (e instanceof Error && e.name === 'InvalidStateError')) {
+        return toast(S.security.alreadyOnDevice)
+      }
       fail(e)
     },
   })
