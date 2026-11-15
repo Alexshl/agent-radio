@@ -37,7 +37,7 @@ export interface HistoryMessage {
   session: string
   host: string | null
   text: string
-  status: 'aired' | 'skipped' | 'failed' | 'queued'
+  status: 'aired' | 'skipped' | 'failed' | 'queued' | 'waiting' | 'onair' | 'playing'
   type: 'voice' | 'audio'
   durationSec: number | null
   hasClip: boolean

@@ -56,7 +56,7 @@ export function streamRoutes(db: Db, config: Config, fetchImpl: typeof fetch = f
       status: 200,
       headers: {
         'Content-Type': upstream.headers.get('content-type') ?? 'audio/mpeg',
-        'Cache-Control': 'no-store',
+        'Cache-Control': 'no-store, no-transform',
         'X-Accel-Buffering': 'no',
         'icy-name': 'agent-radio',
       },

@@ -5,7 +5,7 @@ import { get } from '../api/client'
 import type { Live, Radio as RadioData } from '../api/types'
 import { S } from '../i18n'
 import { fmtDuration } from '../lib/format'
-import type { SourceKind } from '../lib/player-controller'
+import { LAG_SHOW_S, type SourceKind } from '../lib/player-controller'
 import { sourceInfo } from '../lib/source-info'
 import { usePlayer } from './Player'
 
@@ -63,7 +63,13 @@ export function PlayerBar() {
           <Square size={14} aria-hidden="true" />
         </button>
         {live ? (
-          <span className="bdg t-danger pb-live">{S.player.liveBadge}</span>
+          p.lag > LAG_SHOW_S ? (
+            <span className="bdg pb-live" title={S.player.behindHint}>
+              {S.player.behind(Math.round(p.lag))}
+            </span>
+          ) : (
+            <span className="bdg t-danger pb-live">{S.player.liveBadge}</span>
+          )
         ) : (
           <div className="pb-seek">
             <span className="mono tnum muted pb-time">{fmtDuration(p.position)}</span>

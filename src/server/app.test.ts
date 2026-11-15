@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from './app'
 import { loadConfig } from './config'
 import { openDb } from './db/client'
-import type { EngineApi } from './engine/client'
+import type { EngineApi, EngineMsgState } from './engine/client'
 import type { IcecastApi } from './icecast'
 import { createApiKey, revokeApiKey } from './lib/api-keys'
 import { RateLimiter } from './lib/rate-limit'
@@ -31,6 +31,7 @@ function setup(opts: { listeners?: number | null; rate?: number; env?: Record<st
     setDuck: vi.fn(async () => {}),
     setLevels: vi.fn(async () => {}),
     restart: vi.fn(async () => {}),
+    msgStates: vi.fn(async (): Promise<EngineMsgState[]> => []),
   } satisfies EngineApi
   const listeners = vi.fn(async (_id: string) => (opts.listeners === undefined ? 1 : opts.listeners))
   const icecast: IcecastApi = { listeners, isUp: async () => true }
@@ -122,7 +123,7 @@ describe('POST /api/say', () => {
     const r = await say(t.app, token)
     expect(await r.json()).toMatchObject({ status: 'aired', listeners: 2 })
     expect(t.makeClip).toHaveBeenCalledOnce()
-    expect(t.engine.push).toHaveBeenCalledWith(station.id, '/shared/clips/clip.mp3')
+    expect(t.engine.push).toHaveBeenCalledWith(station.id, '/shared/clips/clip.mp3', expect.any(String))
   })
 
   it('202 queued when the speech is slow; airs when ready and somebody still listens', async () => {
@@ -136,11 +137,11 @@ describe('POST /api/say', () => {
     expect(t.db.$client.prepare('select status from messages').all()).toEqual([{ status: 'queued' }])
     expect(t.engine.push).not.toHaveBeenCalled()
     finish('/shared/clips/slow.mp3')
-    await vi.waitFor(() => expect(t.db.$client.prepare('select status from messages').all()).toEqual([{ status: 'aired' }]))
-    expect(t.engine.push).toHaveBeenCalledWith(station.id, '/shared/clips/slow.mp3')
+    await vi.waitFor(() => expect(t.db.$client.prepare('select status from messages').all()).toEqual([{ status: 'onair' }]))
+    expect(t.engine.push).toHaveBeenCalledWith(station.id, '/shared/clips/slow.mp3', expect.any(String))
   })
 
-  it('a queued message is skipped when the listeners left meanwhile, failed when the speech fails', async () => {
+  it('a queued message is held when the listeners left meanwhile (within the grace), failed when the speech fails', async () => {
     const t = setup({ listeners: 1, env: { SAY_SYNC_WAIT_MS: '20' } })
     const { token } = await userWithKey(t.db, 'a@x.io')
     let finish: (f: string) => void = () => {}
@@ -148,7 +149,7 @@ describe('POST /api/say', () => {
     expect((await say(t.app, token)).status).toBe(202)
     t.listeners.mockImplementation(async () => 0)
     finish('/shared/clips/late.mp3')
-    await vi.waitFor(() => expect(t.db.$client.prepare('select status from messages').all()).toEqual([{ status: 'skipped' }]))
+    await vi.waitFor(() => expect(t.db.$client.prepare('select status from messages').all()).toEqual([{ status: 'waiting' }]))
     expect(t.engine.push).not.toHaveBeenCalled()
 
     t.listeners.mockImplementation(async () => 1)
@@ -207,11 +208,11 @@ describe('user isolation', () => {
     const b = await userWithKey(t.db, 'b@x.io')
     await say(t.app, a.token)
     expect(t.listeners).toHaveBeenLastCalledWith(a.station.id)
-    expect(t.engine.push).toHaveBeenLastCalledWith(a.station.id, expect.any(String))
+    expect(t.engine.push).toHaveBeenLastCalledWith(a.station.id, expect.any(String), expect.any(String))
     await say(t.app, b.token)
     expect(t.listeners).toHaveBeenLastCalledWith(b.station.id)
-    expect(t.engine.push).toHaveBeenLastCalledWith(b.station.id, expect.any(String))
-    expect(t.engine.push).not.toHaveBeenCalledWith(a.station.id, expect.any(String), expect.anything())
+    expect(t.engine.push).toHaveBeenLastCalledWith(b.station.id, expect.any(String), expect.any(String))
+    expect(t.engine.push.mock.calls.map((x: unknown[]) => x[0])).toEqual([a.station.id, b.station.id])
     const r = await t.app.request('/api/status', { headers: { Authorization: `Bearer ${a.token}` } })
     const body = (await r.json()) as { station: { id: string } }
     expect(body.station.id).toBe(a.station.id)
@@ -224,7 +225,7 @@ describe('user isolation', () => {
     const b = await userWithKey(t.db, 'b@x.io')
     await say(t.app, a.token, { session: 's', text: 'hi', stationId: b.station.id, userId: b.user.id })
     expect(t.engine.push).toHaveBeenCalledTimes(1)
-    expect(t.engine.push).toHaveBeenCalledWith(a.station.id, expect.any(String))
+    expect(t.engine.push).toHaveBeenCalledWith(a.station.id, expect.any(String), expect.any(String))
   })
 
   it("changing A's source touches only A's station", async () => {

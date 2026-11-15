@@ -16,6 +16,19 @@ services:
     image: libretime/icecast:2.4.4
     restart: unless-stopped
     networks: [internal]
+    # Lag guard: a client that cannot keep up is DROPPED (its player reconnects at the live edge) instead of drifting minutes behind:
+    # per-client queue = 10 s of audio at the stream bitrate, burst on connect = 2 s (bytes = kbps * 125 * seconds).
+    # icecast's own defaults are 512 KB (about 22 s at 192 kbps) and 64 KB.
+    entrypoint:
+      - sh
+      - -c
+      - 'B=$$(( ${STREAM_BITRATE:-192} * 125 )); xml-edit queue-size $$(( B * 10 )) /etc/icecast.xml; xml-edit burst-size $$(( B * 2 )) /etc/icecast.xml; exec docker-entrypoint "$$@"'
+      - sh
+    command: ["icecast", "-c", "/etc/icecast.xml"]
+    sysctls:
+      # a stalled client must show up as a full icecast queue quickly: without a cap the kernel autotunes the send buffer to several MB (minutes of audio)
+      net.ipv4.tcp_wmem: "4096 16384 65536"
+      net.ipv4.tcp_rmem: "4096 16384 65536"
     environment:
       ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set in .env}
       ICECAST_ADMIN_PASSWORD: ${ICECAST_ADMIN_PASSWORD:?set in .env}
@@ -32,18 +45,41 @@ services:
       ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set in .env}
       CONTROL_PORT: "8080"
       STREAM_BITRATE: ${STREAM_BITRATE:-192}
+      # the time zone of the lag marker in the stream title ("<track> [14:32]")
+      TZ: ${STREAM_TZ:-UTC}
     volumes:
       - ./liquidsoap/radio.liq:/etc/liquidsoap/radio.liq:ro
       - shared:/shared:ro
       - ${MUSIC_DIR:?set in .env}:/music:ro
+
+  # The public port. Streams go through here straight to icecast (the app only validates the listen token), so an app deploy
+  # (`docker compose up -d --build app`) does not cut the listeners. See README "Deploy without dropping listeners".
+  front:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on: [icecast]
+    networks: [internal, edge]
+    sysctls:
+      # same cap for the sockets towards the players (see icecast)
+      net.ipv4.tcp_wmem: "4096 16384 65536"
+      net.ipv4.tcp_rmem: "4096 16384 65536"
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${PORT:-8790}:8080"
+    volumes:
+      # the folder, not the file: a replaced Caddyfile (git checkout) must be seen by the running container
+      - ./deploy:/etc/caddy:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/__front/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
 
   app:
     build: .
     restart: unless-stopped
     depends_on: [liquidsoap, icecast]
     networks: [internal, edge, tts]
-    ports:
-      - "${BIND_ADDR:-127.0.0.1}:${PORT:-8790}:8790"
+    # no published port: the front (above) is the only way in
     environment:
       PORT: "8790"
       DATA_DIR: /data
@@ -51,6 +87,7 @@ services:
       MUSIC_DIR: /music
       PIPER_MODELS_DIR: /data/piper
       ICECAST_URL: http://icecast:8000
+      ICECAST_ADMIN_PASSWORD: ${ICECAST_ADMIN_PASSWORD:?set in .env}
       ENGINE_URL: http://liquidsoap:8080
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}

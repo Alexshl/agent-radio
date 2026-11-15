@@ -3,7 +3,7 @@ import { loadConfig } from '../config'
 import { eq } from 'drizzle-orm'
 import { openDb } from '../db/client'
 import { stations } from '../db/schema'
-import { EngineClient } from './client'
+import { EngineClient, type EngineMsgState } from './client'
 import { createUser, syncEngine } from '../stations'
 
 describe('syncEngine', () => {
@@ -23,6 +23,7 @@ describe('syncEngine', () => {
       setDuck: vi.fn(async () => {}),
       setLevels: vi.fn(async () => {}),
       restart: vi.fn(async () => {}),
+      msgStates: vi.fn(async (): Promise<EngineMsgState[]> => []),
     }
     expect(await syncEngine(db, config, engine)).toEqual({ added: 2, removed: 1 })
     expect(engine.add).toHaveBeenCalledWith(a.id, 14, { musicDb: 0, voiceDb: 0, trackDb: 0 })

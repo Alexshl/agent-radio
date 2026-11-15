@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { apiKeys, messages } from '../db/schema'
 import type { FullDeps } from '../deps'
 import type { AppEnv } from '../env'
+import { deliveryView, messageById, patchMessage } from '../delivery'
 import { requireApiKey } from '../lib/api-keys'
 import { HttpError, badRequest } from '../lib/http'
 import { newId, nowIso } from '../lib/ids'
@@ -94,10 +95,10 @@ export async function receiveUpload(req: Request, dir: string, maxBytes: number,
 }
 
 export function apiRoutes(deps: FullDeps) {
-  const { db, config, engine, icecast, limiter, media, airing } = deps
+  const { db, config, icecast, limiter, media, airing } = deps
   const api = new Hono<AppEnv>()
   // agent routes only; the browser routes (/api/auth, /api/app, /api/admin) are mounted before this router
-  for (const path of ['/say', '/status', '/station/*', '/play']) api.use(path, requireApiKey(db))
+  for (const path of ['/say', '/status', '/station/*', '/play', '/messages/*']) api.use(path, requireApiKey(db))
 
   api.post('/say', async (c) => {
     const { keyId, userId } = c.get('auth')
@@ -112,18 +113,21 @@ export function apiRoutes(deps: FullDeps) {
     if (!st || !user) throw new HttpError(404, 'no_station', 'No station for this user')
     db.update(apiKeys).set({ lastUsedAt: nowIso(), lastSession: session }).where(eq(apiKeys.id, keyId)).run()
     const r = await airMessage(deps, { user, station: st, session, host: host ?? null, text })
-    return c.json(r, r.status === 'queued' ? 202 : 200)
+    return c.json(r, r.status === 'queued' || r.status === 'waiting' ? 202 : 200)
   })
 
   api.get('/status', async (c) => {
     const user = userById(db, c.get('auth').userId)
     const st = user && stationOfUser(db, user.id)
     if (!user || !st) throw new HttpError(404, 'no_station', 'No station for this user')
-    const [up, listeners, title] = await Promise.all([icecast.isUp(st.id), icecast.listeners(st.id), icecast.title?.(st.id) ?? null])
+    const [up, ls, title] = await Promise.all([icecast.isUp(st.id), deps.listeners.observe(st.id), icecast.title?.(st.id) ?? null])
     const file = airing.current(st.id)
     return c.json({
       up: up === true,
-      listeners: listeners ?? 0,
+      listeners: ls.listeners ?? 0,
+      // somebody listens now or was seen within the last 180 s (a player reconnecting): messages are still sent, and held until they are back
+      listening: ls.recentlyListening,
+      reconnecting: (ls.listeners ?? 0) === 0 && ls.recentlyListening,
       title: file ? file.title : title,
       // what the agent skill needs to write the summary
       lang: user.lang,
@@ -140,6 +144,13 @@ export function apiRoutes(deps: FullDeps) {
         listenUrl: listenUrl(config, st.id, st.listenToken),
       },
     })
+  })
+
+  // Where a message stands: waiting | queued | on_air_queued | playing | played | skipped | failed (+ reason, startedAt, endedAt)
+  api.get('/messages/:id', (c) => {
+    const m = messageById(db, c.req.param('id'))
+    if (!m || m.userId !== c.get('auth').userId) throw new HttpError(404, 'not_found', 'No such message')
+    return c.json(deliveryView(m))
   })
 
   // Changes the music bed live (the stream keeps running).
@@ -198,8 +209,10 @@ export function apiRoutes(deps: FullDeps) {
       const host = (up.fields.host ?? '').trim().slice(0, 200) || null
       const intro = (up.fields.intro ?? '').trim().slice(0, 2000)
 
-      const listeners = await icecast.listeners(st.id)
-      const heard = (listeners ?? 0) > 0
+      const ls = await deps.listeners.observe(st.id)
+      const listeners = ls.listeners ?? 0
+      // somebody listens now, or was seen within the grace window (a reconnecting player): the file is prepared and held for them
+      const heard = listeners > 0 || ls.recentlyListening
       let note: string | null = null
       if (heard && intro) {
         try {
@@ -229,24 +242,22 @@ export function apiRoutes(deps: FullDeps) {
       }
       if (!heard) {
         db.insert(messages)
-          .values({ ...base, status: 'skipped' })
+          .values({ ...base, status: 'skipped', reason: 'nobody_listening' })
           .run()
-        return c.json({ status: 'skipped', listeners: listeners ?? 0, id, title, durationSec })
+        return c.json({ status: 'skipped', listeners, id, title, durationSec })
       }
+      db.insert(messages)
+        .values({ ...base, status: 'waiting' })
+        .run()
+      let status: 'onair' | 'waiting' | 'skipped'
       try {
-        await engine.pushTrack(st.id, join(config.engineSharedDir, 'clips', basename(out)))
+        status = await deps.delivery.offer(id, st.id)
       } catch (e) {
         console.error('play failed:', e instanceof Error ? e.message : e)
-        db.insert(messages)
-          .values({ ...base, status: 'failed', clipPath: null, clipCreatedAt: null })
-          .run()
+        patchMessage(db, id, { status: 'failed', reason: 'push_failed', clipPath: null, clipCreatedAt: null })
         throw new HttpError(502, 'play_failed', 'Could not queue the file on air')
       }
-      airing.start(st.id, title, durationSec + (introClip ? 10 : 0))
-      db.insert(messages)
-        .values({ ...base, status: 'aired' })
-        .run()
-      return c.json({ status: 'aired', listeners, id, title, durationSec })
+      return c.json({ status: status === 'onair' ? 'aired' : status, listeners, id, title, durationSec }, status === 'waiting' ? 202 : 200)
     } catch (e) {
       rmSync(out, { force: true })
       throw e

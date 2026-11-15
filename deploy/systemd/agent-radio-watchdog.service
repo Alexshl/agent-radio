@@ -1,0 +1,10 @@
+[Unit]
+Description=agent-radio watchdog (one health pass)
+
+[Service]
+Type=oneshot
+# WATCHDOG_REPO, WATCHDOG_PROJECT, WATCHDOG_ALERT_CMD ... come from this file (see README "Watchdog")
+EnvironmentFile=%h/.config/agent-radio/watchdog.env
+ExecStart=/bin/bash -c 'exec "$WATCHDOG_REPO/scripts/watchdog.sh"'
+TimeoutStartSec=55
+Nice=10

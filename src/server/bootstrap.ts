@@ -18,7 +18,7 @@ export function bootstrap(): FullDeps & { ttsService: TtsService } {
     db,
     config,
     engine: new EngineClient(config.engineUrl),
-    icecast: new IcecastStats(config.icecastUrl),
+    icecast: new IcecastStats(config.icecastUrl, fetch, config.icecastAdmin),
     // replaced below: the service needs the registry that withDefaults builds
     tts: { makeClip: () => Promise.reject(new Error('tts not ready')) },
     limiter: new RateLimiter(config.sayRatePerMin),

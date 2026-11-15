@@ -27,6 +27,8 @@ export interface PlayerState {
   muted: boolean
   // a live stream dropped and is being re-opened (the user's play intent is kept)
   reconnecting: boolean
+  // live stream only: seconds the audio is behind the live edge (buffered end - current time); 0 when unknown
+  lag: number
 }
 
 export interface Timers {
@@ -41,6 +43,18 @@ export const RECONNECT_EVERY_MS = 10_000
 export const RECONNECT_GIVE_UP_MS = 5 * 60_000
 // a 'stalled' event only counts when the stream shows no progress for this long
 export const STALL_GRACE_MS = 8000
+// "stay at the live edge": every EDGE_CHECK_MS a live stream that is more than EDGE_MAX_LAG_S behind (a backlog kept by the browser or an
+// edge proxy after a stall / background suspend) is moved to EDGE_TARGET_S before the end of the buffer, or re-opened when it cannot seek
+export const EDGE_CHECK_MS = 2000
+export const EDGE_MAX_LAG_S = 6
+export const EDGE_TARGET_S = 1.5
+// the bar shows the lag only above this
+export const LAG_SHOW_S = 3
+
+export interface RangesLike {
+  readonly length: number
+  end(index: number): number
+}
 
 export interface AudioLike {
   src: string
@@ -49,6 +63,8 @@ export interface AudioLike {
   volume: number
   muted: boolean
   readonly paused: boolean
+  readonly buffered?: RangesLike
+  readonly seekable?: RangesLike
   play(): Promise<void>
   pause(): void
   load(): void
@@ -90,6 +106,9 @@ export class PlayerController {
   private token = 0
   private retryTimer: unknown = null
   private stallTimer: unknown = null
+  private edgeTimer: unknown = null
+  // a playing live stream was paused from outside (OS media keys, headset, browser): the buffered backlog is stale, play must re-open it
+  private needFresh = false
   private attempts = 0
   private droppedAt = 0
   onError: ((source: PlayerSource) => void) | null = null
@@ -109,6 +128,7 @@ export class PlayerController {
       volume: v.volume,
       muted: v.muted,
       reconnecting: false,
+      lag: 0,
     }
     audio.volume = v.volume
     audio.muted = v.muted
@@ -125,9 +145,19 @@ export class PlayerController {
       this.clearRetry()
       this.attempts = 0
       this.set({ playing: true, loading: false, reconnecting: false })
+      this.watchEdge()
     })
-    on('play', () => this.state.current && !this.state.reconnecting && this.set({ playing: true }))
-    on('pause', () => this.state.current && this.set({ playing: false }))
+    on('play', () => {
+      if (!this.state.current || this.state.reconnecting) return
+      if (this.needFresh && this.state.current.kind === 'live') return this.reopen()
+      this.set({ playing: true })
+    })
+    on('pause', () => {
+      if (!this.state.current) return
+      // our own pause()/stop()/start() already cleared `playing`: only a pause from outside finds a playing live stream
+      if (this.state.playing && this.state.current.kind === 'live') this.needFresh = true
+      this.set({ playing: false })
+    })
     on('waiting', () => this.state.current && this.set({ loading: true }))
     on('ended', () => {
       const cur = this.state.current
@@ -164,6 +194,44 @@ export class PlayerController {
     this.retryTimer = null
     if (this.stallTimer) this.timers.clear(this.stallTimer)
     this.stallTimer = null
+    if (this.edgeTimer) this.timers.clear(this.edgeTimer)
+    this.edgeTimer = null
+  }
+
+  // seconds the live audio is behind the end of what the browser has downloaded
+  private measureLag(): number {
+    const b = this.audio.buffered
+    if (!b || b.length === 0) return 0
+    return Math.max(0, b.end(b.length - 1) - (this.audio.currentTime || 0))
+  }
+
+  // the live-edge watcher: runs every EDGE_CHECK_MS while a live stream plays
+  private watchEdge() {
+    if (this.edgeTimer || this.state.current?.kind !== 'live') return
+    const check = () => {
+      this.edgeTimer = null
+      const cur = this.state.current
+      if (cur?.kind !== 'live' || !this.state.playing) return
+      const lag = this.measureLag()
+      if (Math.abs(lag - this.state.lag) >= 0.5) this.set({ lag })
+      if (lag > EDGE_MAX_LAG_S) this.catchUp()
+      this.edgeTimer = this.timers.set(check, EDGE_CHECK_MS)
+    }
+    this.edgeTimer = this.timers.set(check, EDGE_CHECK_MS)
+  }
+
+  private catchUp() {
+    const b = this.audio.buffered
+    const sk = this.audio.seekable
+    const target = b && b.length > 0 ? b.end(b.length - 1) - EDGE_TARGET_S : 0
+    if (sk && sk.length > 0 && target > 0 && sk.end(sk.length - 1) >= target) {
+      this.audio.currentTime = target
+      this.set({ lag: EDGE_TARGET_S })
+      return
+    }
+    // cannot seek on this stream: a fresh connection starts at the live edge
+    this.clearRetry()
+    this.reopen()
   }
 
   // The live stream broke (server restart, network): keep the source, show "reconnecting" and try again with a growing pause.
@@ -181,6 +249,8 @@ export class PlayerController {
     }
     const delay = RECONNECT_DELAYS_MS[this.attempts] ?? RECONNECT_EVERY_MS
     this.attempts++
+    if (this.edgeTimer) this.timers.clear(this.edgeTimer)
+    this.edgeTimer = null
     this.set({ playing: false, loading: true, reconnecting: true })
     this.retryTimer = this.timers.set(() => {
       this.retryTimer = null
@@ -192,6 +262,8 @@ export class PlayerController {
     const cur = this.state.current
     if (cur?.kind !== 'live') return
     const token = ++this.token
+    this.needFresh = false
+    this.set({ lag: 0 })
     this.audio.src = withCacheBust(cur.src, this.timers.now())
     this.audio.load()
     this.audio.play().then(
@@ -204,11 +276,12 @@ export class PlayerController {
     )
   }
 
-  // The tab came back to the foreground (or the network is back): a dropped stream is re-opened at once.
+  // The tab came back to the foreground (or the network is back): a live stream is ALWAYS re-opened, never resumed from the old buffer
+  // (after a background suspend the browser and the edge proxies hold minutes of stale audio).
   recover() {
     const cur = this.state.current
     if (cur?.kind !== 'live') return
-    if (this.state.reconnecting || (!this.state.playing && !this.audio.paused)) {
+    if (this.state.playing || this.state.loading || this.state.reconnecting || !this.audio.paused) {
       this.clearRetry()
       this.reopen()
     }
@@ -246,7 +319,8 @@ export class PlayerController {
     this.clearRetry()
     this.audio.pause()
     this.audio.src = source.src
-    this.set({ current: source, playing: false, loading: true, position: 0, duration: 0, reconnecting: false })
+    this.needFresh = false
+    this.set({ current: source, playing: false, loading: true, position: 0, duration: 0, reconnecting: false, lag: 0 })
     this.audio.play().then(
       () => {
         if (token === this.token) this.set({ playing: true, loading: false })
@@ -269,6 +343,12 @@ export class PlayerController {
   resume() {
     const cur = this.state.current
     if (!cur) return
+    // a paused live stream resumes at the live edge, not from the old buffer
+    if (cur.kind === 'live') {
+      this.clearRetry()
+      this.set({ loading: true })
+      return this.reopen()
+    }
     const token = ++this.token
     this.set({ loading: true })
     this.audio.play().then(
@@ -290,7 +370,8 @@ export class PlayerController {
     this.audio.pause()
     this.audio.removeAttribute('src')
     this.audio.load()
-    this.set({ current: null, playing: false, loading: false, position: 0, duration: 0, reconnecting: false })
+    this.needFresh = false
+    this.set({ current: null, playing: false, loading: false, position: 0, duration: 0, reconnecting: false, lag: 0 })
   }
 
   seek(seconds: number) {

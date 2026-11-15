@@ -67,6 +67,8 @@ export const stations = sqliteTable('stations', {
   voiceGainDb: real('voice_gain_db').notNull().default(0),
   trackGainDb: real('track_gain_db').notNull().default(0),
   chime: integer('chime', { mode: 'boolean' }).notNull().default(true),
+  // epoch ms of the last moment icecast showed a listener (the grace window of "recently listening", see listeners.ts)
+  lastListenerSeenAt: integer('last_listener_seen_at'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })
@@ -81,7 +83,8 @@ export const messages = sqliteTable(
     session: text('session').notNull(),
     host: text('host'),
     text: text('text').notNull(),
-    // aired | skipped | failed
+    // waiting (held until a listener reconnects) | queued (slow voice still synthesizing) | onair (pushed to the engine, not started yet) |
+    // playing | aired (= played to the end) | skipped | failed
     status: text('status').notNull(),
     clipPath: text('clip_path'),
     // voice | audio (a file the agent sent: `text` holds its title)
@@ -91,6 +94,13 @@ export const messages = sqliteTable(
     clipCreatedAt: text('clip_created_at'),
     // a warning to show in the history (for example the spoken intro of a file failed)
     note: text('note'),
+    // delivery: when the clip was handed to the engine / the engine started and finished playing it (epoch ms), how many times it was pushed
+    pushedAt: integer('pushed_at'),
+    startedAt: integer('started_at'),
+    endedAt: integer('ended_at'),
+    attempts: integer('attempts').notNull().default(0),
+    // why a message was not played: nobody_listening | expired | tts_failed | push_failed | not_started | engine_restarted
+    reason: text('reason'),
     createdAt: text('created_at').notNull(),
   },
   (t) => [index('messages_user_created').on(t.userId, t.createdAt)],

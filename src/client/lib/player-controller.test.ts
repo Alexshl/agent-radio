@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { type AudioLike, PlayerController, type PlayerSource, VOLUME_KEY } from './player-controller'
+import { type AudioLike, EDGE_CHECK_MS, LAG_SHOW_S, PlayerController, type PlayerSource, VOLUME_KEY } from './player-controller'
 
 class FakeAudio implements AudioLike {
   src = ''
@@ -8,6 +8,15 @@ class FakeAudio implements AudioLike {
   volume = 1
   muted = false
   paused = true
+  // end of the downloaded data / of the seekable range, in seconds (null = no range)
+  bufferedEnd: number | null = null
+  seekableEnd: number | null = null
+  get buffered() {
+    return { length: this.bufferedEnd === null ? 0 : 1, end: () => this.bufferedEnd ?? 0 }
+  }
+  get seekable() {
+    return { length: this.seekableEnd === null ? 0 : 1, end: () => this.seekableEnd ?? 0 }
+  }
   playCalls = 0
   fail = false
   private handlers = new Map<string, (() => void)[]>()
@@ -284,7 +293,6 @@ describe('PlayerController', () => {
       const { ctl, audio, next } = makeTimed()
       ctl.toggle(live)
       await tick()
-      audio.emit('playing')
       audio.emit('stalled')
       audio.emit('timeupdate')
       expect(next()).toBeNull()
@@ -357,5 +365,154 @@ describe('PlayerController', () => {
     fn.mockClear()
     ctl.stop()
     expect(fn).not.toHaveBeenCalled()
+  })
+})
+
+describe('PlayerController live edge', () => {
+  function makeEdge() {
+    const audio = new FakeAudio()
+    let now = 1000
+    const queue: { at: number; fn: () => void; id: number }[] = []
+    let n = 0
+    const timers = {
+      set: (fn: () => void, ms: number) => {
+        const id = ++n
+        queue.push({ at: now + ms, fn, id })
+        return id
+      },
+      clear: (id: unknown) => {
+        const i = queue.findIndex((q) => q.id === id)
+        if (i >= 0) queue.splice(i, 1)
+      },
+      now: () => now,
+    }
+    // advances the clock and runs what is due
+    const advance = (ms: number) => {
+      const end = now + ms
+      for (;;) {
+        queue.sort((a, b) => a.at - b.at)
+        const q = queue[0]
+        if (!q || q.at > end) break
+        queue.shift()
+        now = q.at
+        q.fn()
+      }
+      now = end
+    }
+    return { audio, ctl: new PlayerController(audio, null, timers), advance, pending: () => queue.length }
+  }
+
+  async function playing() {
+    const t = makeEdge()
+    t.ctl.toggle(live)
+    await tick()
+    t.audio.emit('playing')
+    return t
+  }
+
+  it('does nothing while the lag is small, and shows it only above the threshold', async () => {
+    const { ctl, audio, advance } = await playing()
+    audio.currentTime = 10
+    audio.bufferedEnd = 12
+    advance(EDGE_CHECK_MS)
+    expect(ctl.getState().lag).toBeCloseTo(2)
+    expect(audio.src).toBe('/stream/x.mp3')
+    audio.bufferedEnd = 14
+    advance(EDGE_CHECK_MS)
+    expect(ctl.getState().lag).toBeCloseTo(4)
+    expect(ctl.getState().lag).toBeGreaterThan(LAG_SHOW_S)
+    expect(audio.currentTime).toBe(10) // 4 s is below the 6 s limit: no jump
+  })
+
+  it('jumps to 1.5 s before the end of the buffer when more than 6 s behind (seekable stream)', async () => {
+    const { ctl, audio, advance } = await playing()
+    audio.currentTime = 10
+    audio.bufferedEnd = 40
+    audio.seekableEnd = 40
+    advance(EDGE_CHECK_MS)
+    expect(audio.currentTime).toBeCloseTo(38.5)
+    expect(ctl.getState().lag).toBeCloseTo(1.5)
+    expect(audio.src).toBe('/stream/x.mp3')
+  })
+
+  it('re-opens with a fresh URL when it cannot seek', async () => {
+    const { ctl, audio, advance } = await playing()
+    audio.currentTime = 10
+    audio.bufferedEnd = 40
+    audio.seekableEnd = null
+    const calls = audio.playCalls
+    advance(EDGE_CHECK_MS)
+    await tick()
+    expect(audio.src).toMatch(/^\/stream\/x\.mp3\?_r=\d+$/)
+    expect(audio.playCalls).toBe(calls + 1)
+    expect(ctl.getState().lag).toBe(0)
+  })
+
+  it('keeps checking every 2 s while playing and stops with the stream', async () => {
+    const { ctl, audio, advance, pending } = await playing()
+    audio.currentTime = 1
+    audio.bufferedEnd = 2
+    advance(EDGE_CHECK_MS * 3)
+    expect(pending()).toBe(1)
+    ctl.stop()
+    expect(pending()).toBe(0)
+  })
+
+  it('is not used for files', async () => {
+    const t = makeEdge()
+    t.ctl.toggle(track('1'))
+    await tick()
+    t.audio.emit('playing')
+    expect(t.pending()).toBe(0)
+  })
+
+  it('play after a pause from outside re-opens the stream fresh instead of resuming the buffer', async () => {
+    const { ctl, audio } = await playing()
+    audio.emit('pause') // OS media key / headset
+    expect(ctl.getState().playing).toBe(false)
+    const calls = audio.playCalls
+    audio.emit('play')
+    await tick()
+    expect(audio.src).toMatch(/^\/stream\/x\.mp3\?_r=\d+$/)
+    expect(audio.playCalls).toBe(calls + 1)
+  })
+
+  it('resume() of a live stream re-opens it fresh', async () => {
+    const { ctl, audio } = await playing()
+    audio.emit('pause')
+    ctl.resume()
+    await tick()
+    expect(audio.src).toMatch(/_r=\d+$/)
+    expect(ctl.getState()).toMatchObject({ playing: true, loading: false })
+  })
+
+  it('recover() always re-opens a playing live stream (never keeps the old buffer)', async () => {
+    const { ctl, audio } = await playing()
+    audio.paused = false
+    const calls = audio.playCalls
+    ctl.recover()
+    await tick()
+    expect(audio.src).toMatch(/_r=\d+$/)
+    expect(audio.playCalls).toBe(calls + 1)
+  })
+
+  it('recover() leaves a stream the user stopped alone', async () => {
+    const { ctl, audio } = await playing()
+    ctl.stop()
+    const calls = audio.playCalls
+    ctl.recover()
+    expect(audio.playCalls).toBe(calls)
+  })
+
+  it('our own stop / switch does not count as a pause from outside', async () => {
+    const { ctl, audio } = await playing()
+    ctl.stop()
+    audio.emit('pause')
+    ctl.toggle(live)
+    await tick()
+    const calls = audio.playCalls
+    audio.emit('play')
+    expect(audio.playCalls).toBe(calls)
+    expect(audio.src).toBe('/stream/x.mp3')
   })
 })
