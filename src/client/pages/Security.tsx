@@ -22,17 +22,21 @@ function PasswordCard() {
   const fail = useErrorToast()
   const [current, setCurrent] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const mismatch = confirm.length > 0 && confirm !== password
   const change = useMutation({
     mutationFn: () => post('/auth/password', { current, password }),
     onSuccess: () => {
       setCurrent('')
       setPassword('')
+      setConfirm('')
       toast(S.security.passwordChanged)
     },
     onError: fail,
   })
   const submit = (e: FormEvent) => {
     e.preventDefault()
+    if (password !== confirm) return
     change.mutate()
   }
   return (
@@ -65,8 +69,27 @@ function PasswordCard() {
           />
           <span className="msg muted">{S.security.passwordHint}</span>
         </div>
+        <div className="field">
+          <label htmlFor="sec-confirm">{S.security.confirmPassword}</label>
+          <input
+            id="sec-confirm"
+            className={mismatch ? 'inp is-danger' : 'inp'}
+            type="password"
+            autoComplete="new-password"
+            required
+            aria-invalid={mismatch}
+            aria-describedby={mismatch ? 'sec-confirm-msg' : undefined}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+          {mismatch && (
+            <span id="sec-confirm-msg" className="msg t-danger" role="alert">
+              {S.security.mismatch}
+            </span>
+          )}
+        </div>
         <div>
-          <button type="submit" className="btn primary" disabled={change.isPending}>
+          <button type="submit" className="btn primary" disabled={change.isPending || password.length === 0 || password !== confirm}>
             {S.security.changePassword}
           </button>
         </div>

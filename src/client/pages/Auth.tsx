@@ -164,6 +164,8 @@ export function AcceptLink() {
   })
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const mismatch = confirm.length > 0 && confirm !== password
   const accept = useMutation({
     mutationFn: () => post<{ user: Me }>(`/auth/link/${encodeURIComponent(token)}`, { name: name || undefined, password }),
     onSuccess: (r) => {
@@ -193,6 +195,7 @@ export function AcceptLink() {
   const until = fmtDate(l.expiresAt)
   const submit = (e: FormEvent) => {
     e.preventDefault()
+    if (password !== confirm) return
     accept.mutate()
   }
   return (
@@ -228,12 +231,36 @@ export function AcceptLink() {
           />
           <span className="msg muted">{S.auth.passwordHint}</span>
         </div>
+        <div className="field">
+          <label htmlFor="ar-ipass2">{S.security.confirmPassword}</label>
+          <input
+            id="ar-ipass2"
+            className={mismatch ? 'inp is-danger' : 'inp'}
+            type="password"
+            autoComplete="new-password"
+            required
+            aria-invalid={mismatch}
+            aria-describedby={mismatch ? 'ar-ipass2-msg' : undefined}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+          {mismatch && (
+            <span id="ar-ipass2-msg" className="msg t-danger" role="alert">
+              {S.security.mismatch}
+            </span>
+          )}
+        </div>
         {accept.isError && (
           <div className="ar-err" role="alert">
             {errorOf(accept.error)}
           </div>
         )}
-        <button type="submit" className="btn primary" style={{ justifyContent: 'center', width: '100%' }} disabled={accept.isPending}>
+        <button
+          type="submit"
+          className="btn primary"
+          style={{ justifyContent: 'center', width: '100%' }}
+          disabled={accept.isPending || password.length === 0 || password !== confirm}
+        >
           {isInvite ? S.auth.createAccount : S.auth.resetSubmit}
         </button>
       </form>

@@ -213,6 +213,8 @@ export const ru = {
     passwordTitle: 'Пароль',
     current: 'Текущий пароль',
     newPassword: 'Новый пароль',
+    confirmPassword: 'Повторите новый пароль',
+    mismatch: 'Пароли не совпадают',
     passwordHint: 'Не короче 12 символов. Остальные сеансы будут завершены.',
     changePassword: 'Сменить пароль',
     passwordChanged: 'Пароль изменён',
