@@ -126,7 +126,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       ms.playbackState = 'none'
       return
     }
-    ms.metadata = new MediaMetadata({ title: cur.title, artist: cur.subtitle ?? '', album: S.appName })
+    ms.metadata = new MediaMetadata({
+      title: cur.title,
+      artist: cur.subtitle ?? '',
+      album: S.appName,
+      // square and opaque: iOS fills transparent corners with white on the lock screen
+      artwork: [
+        { src: '/artwork-512.png', sizes: '512x512', type: 'image/png' },
+        { src: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+      ],
+    })
     const set = (action: MediaSessionAction, fn: MediaSessionActionHandler | null) => {
       try {
         ms.setActionHandler(
