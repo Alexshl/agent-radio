@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { ApiError, get } from './client'
-import type { Live, Me, Radio } from './types'
+import { clockOffset } from '../lib/lyrics-sync'
+import type { LearnNow, Live, Me, Radio } from './types'
 
 export const useMe = () =>
   useQuery({
@@ -20,3 +21,19 @@ export const useRadio = () => useQuery({ queryKey: ['radio'], queryFn: () => get
 
 export const useLive = (enabled = true) =>
   useQuery({ queryKey: ['live'], queryFn: () => get<Live>('/app/live'), refetchInterval: 5000, enabled, staleTime: 2000 })
+
+export type LearnNowView = LearnNow & { clockOffsetMs: number }
+
+// The song on air with its lyrics (learn mode), polled; the clock offset to the server is measured with every answer (half of the round trip)
+export const useLearnNow = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['learn-now'],
+    queryFn: async (): Promise<LearnNowView> => {
+      const sent = Date.now()
+      const d = await get<LearnNow>('/app/learn/now')
+      return { ...d, clockOffsetMs: clockOffset(d.serverNowMs, sent, Date.now()) }
+    },
+    refetchInterval: 5000,
+    enabled,
+    staleTime: 2000,
+  })
