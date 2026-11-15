@@ -16,7 +16,7 @@ LANG_CODE="$(printf '%s\n' "$STATUS" | sed -n 's/^language: //p' | head -1)"
 AR_MODE="$MODE" AR_LANG="${LANG_CODE:-uk}" AR_INPUT="$INPUT" python3 - <<'EOF'
 import json, os, re, sys
 
-RADIO_CALL = re.compile(r"(^|[;&|(]\s*|\n\s*)agent-radio\s+(say|play)\b")
+RADIO_CALL = re.compile(r"(^|[;&|(]\s*|\n\s*)(\w+=(\"[^\"]*\"|'[^']*'|\S+)\s+)*agent-radio\s+(say|play)\b")
 
 mode = os.environ["AR_MODE"]
 lang = os.environ["AR_LANG"]
