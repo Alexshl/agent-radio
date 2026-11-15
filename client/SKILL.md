@@ -25,6 +25,7 @@ Do not use it for every small step, for questions that need a long answer, or fo
    - Plain speech. No markdown, no code, no file paths, no URLs, no hashes: say "the migration script", not its path.
    - Numbers in words where natural ("двенадцать статей", "twelve articles"); short sentences; no lists.
    - Never include secrets (keys, passwords, tokens).
+   - For an unusual word (IT slang, an English term, a name) you may put `+` before the stressed vowel, e.g. `закомм+итил`; the server applies it for engines that support stress marks and strips it for the rest.
 3. Send it: `agent-radio say "text"`. For long or quote-heavy text pipe it: `printf '%s' "text" | agent-radio say`.
    - `agent-radio: aired` means it was spoken. `skipped` means nobody listens: fine, move on. `waiting for listener` means the listener dropped a moment ago (a reconnect): the message is held and airs when they are back, nothing to do. `agent-radio say --wait "text"` also waits up to 60 s and prints `played` or `not played: <reason>`; use it only when you must know whether it was heard.
 

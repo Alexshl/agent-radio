@@ -61,6 +61,7 @@ export async function airMessage(
     lang: user.lang,
     chime: st.chime,
     rate: user.speechRate,
+    userId: user.id,
   })
   let timer: ReturnType<typeof setTimeout> | undefined
   const slow = new Promise<'slow'>((resolve) => {

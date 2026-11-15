@@ -521,6 +521,9 @@ function VoiceCard({ r }: { r: Radio }) {
             ))}
           </select>
         </div>
+        <Link to="/pronunciation" style={{ fontSize: 13, fontWeight: 550, color: 'var(--brand-primary)' }}>
+          {S.radio.pronunciationLink}
+        </Link>
         <LevelSlider
           id="ar-rate"
           label={S.radio.speechRate}

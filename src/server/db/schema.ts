@@ -250,3 +250,21 @@ export const authChallenges = sqliteTable(
   },
   (t) => [index('auth_challenges_slot').on(t.kind, t.challenge)],
 )
+
+// Pronunciation dictionary applied to the text before every TTS call. scope 'global' (admin, user_id null) | 'user' (own entries, win over global).
+// match: a word or phrase, case-insensitive, whole words; a trailing `*` makes it a stem (all word forms). replacement may carry `+` BEFORE the stressed vowel.
+export const pronunciations = sqliteTable(
+  'pronunciations',
+  {
+    id: text('id').primaryKey(),
+    scope: text('scope').notNull().default('user'),
+    userId: text('user_id').references(() => users.id),
+    // ru | uk | en | *
+    lang: text('lang').notNull().default('*'),
+    match: text('match').notNull(),
+    replacement: text('replacement').notNull(),
+    note: text('note').notNull().default(''),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [index('pronunciations_user').on(t.userId), index('pronunciations_scope').on(t.scope)],
+)
