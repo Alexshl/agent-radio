@@ -575,8 +575,10 @@ describe('PlayerController live edge', () => {
         clear: (id: unknown) => clearTimeout(id as never),
         now: () => Date.now(),
       }
-      const ctl = new PlayerController(audio, null, timers, { doc, win })
-      return { audio, doc, win, ctl }
+      const session = new FakePage() as FakePage & { state: string }
+      session.state = 'active'
+      const ctl = new PlayerController(audio, null, timers, { doc, win, session })
+      return { audio, doc, win, session, ctl }
     }
 
     async function startLive(src: PlayerSource = live) {
@@ -609,6 +611,41 @@ describe('PlayerController live edge', () => {
       expect(audio.playCalls).toBe(calls + 1)
       expect(audio.src).toMatch(/^\/stream\/x\.mp3\?_r=\d+$/)
       expect(ctl.getState()).toMatchObject({ playing: true, reconnecting: false })
+    })
+    it('audioSession active resumes an interrupted stream only when resumeOnActive is set', async () => {
+      const { ctl, audio, session } = await startLive()
+      const trace: string[] = []
+      ctl.onTrace = (type) => trace.push(type)
+      interrupt(audio)
+      expect(trace).toEqual(['interrupt'])
+      session.state = 'interrupted'
+      session.emit('statechange')
+      session.state = 'active'
+      session.emit('statechange')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(trace).toEqual(['interrupt'])
+      expect(ctl.getState().playing).toBe(false)
+
+      ctl.resumeOnActive = true
+      session.state = 'interrupted'
+      session.emit('statechange')
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(0)
+      expect(audio.playCalls).toBe(calls)
+      session.state = 'active'
+      session.emit('statechange')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(trace).toEqual(['interrupt', 'resumeNow'])
+      expect(audio.playCalls).toBe(calls + 1)
+      expect(ctl.getState().playing).toBe(true)
+    })
+    it('audioSession active does nothing when the stream is not interrupted', async () => {
+      const { ctl, audio, session } = await startLive()
+      ctl.resumeOnActive = true
+      const calls = audio.playCalls
+      session.emit('statechange')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(audio.playCalls).toBe(calls)
     })
     it('a refused resume stays paused and does not retry on its own', async () => {
       const { ctl, win, audio } = await startLive()
