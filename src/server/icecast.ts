@@ -1,3 +1,5 @@
+import { countPlayers, ghostIds, type IcecastClient, MONITOR_UA, parseListClients } from './players'
+
 // Listener counts from the icecast admin stats (public JSON, internal network only).
 export interface IcecastApi {
   // listeners of the mount; 0 when the mount is not live, null when icecast cannot be reached
@@ -6,6 +8,8 @@ export interface IcecastApi {
   isUp(stationId: string): Promise<boolean | null>
   // ICY title of what plays now (relay metadata / track tags), null when unknown
   title?(stationId: string): Promise<string | null>
+  // closes ghost connections of a mount (older connections of a player that reconnected); returns how many were killed
+  reapGhosts?(stationId: string): Promise<number>
 }
 
 interface IcecastSource {
@@ -15,8 +19,7 @@ interface IcecastSource {
   yp_currently_playing?: string
 }
 
-// Connections of the watchdog's stream probe carry this User-Agent and do not count as listeners.
-export const MONITOR_UA = 'agent-radio-monitor'
+export { MONITOR_UA }
 
 // The engine appends the broadcast minute to the title (" [14:32]", a lag marker for the listener, see radio.liq); the UI does not show it.
 export function cleanTitle(raw: string | undefined | null): string | null {
@@ -32,21 +35,23 @@ export class IcecastStats implements IcecastApi {
     private admin: { user: string; password: string } | null = null,
   ) {}
 
-  // monitor connections of a mount (admin listclients); null when unknown
-  private async monitors(stationId: string): Promise<number | null> {
+  // connections of a mount (admin listclients); null when unknown
+  private async clients(stationId: string): Promise<IcecastClient[] | null> {
     if (!this.admin) return null
     try {
-      const auth = Buffer.from(`${this.admin.user}:${this.admin.password}`).toString('base64')
       const res = await this.fetchImpl(`${this.baseUrl}/admin/listclients?mount=/${stationId}`, {
-        headers: { Authorization: `Basic ${auth}` },
+        headers: { Authorization: this.auth() },
         signal: AbortSignal.timeout(5_000),
       })
       if (!res.ok) return null
-      const xml = await res.text()
-      return (xml.match(/<UserAgent>[^<]*agent-radio-monitor[^<]*<\/UserAgent>/gi) ?? []).length
+      return parseListClients(await res.text())
     } catch {
       return null
     }
+  }
+
+  private auth(): string {
+    return `Basic ${Buffer.from(`${this.admin?.user}:${this.admin?.password}`).toString('base64')}`
   }
 
   private async mount(stationId: string): Promise<IcecastSource | null | undefined> {
@@ -62,12 +67,33 @@ export class IcecastStats implements IcecastApi {
     }
   }
 
+  // distinct players (see players.ts), not connections; without admin credentials the raw connection count
   async listeners(stationId: string): Promise<number | null> {
     const m = await this.mount(stationId)
     if (m === undefined) return null
     const n = m?.listeners ?? 0
     if (n === 0) return 0
-    return Math.max(0, n - ((await this.monitors(stationId)) ?? 0))
+    const clients = await this.clients(stationId)
+    return clients ? countPlayers(clients) : n
+  }
+
+  // Kills the ghost connections of a mount (older connections of a player that has a newer one, see ghostIds); returns how many.
+  async reapGhosts(stationId: string): Promise<number> {
+    const clients = await this.clients(stationId)
+    if (!clients) return 0
+    let killed = 0
+    for (const id of ghostIds(clients)) {
+      try {
+        const res = await this.fetchImpl(`${this.baseUrl}/admin/killclient?mount=/${stationId}&id=${encodeURIComponent(id)}`, {
+          headers: { Authorization: this.auth() },
+          signal: AbortSignal.timeout(5_000),
+        })
+        if (res.ok) killed++
+      } catch {
+        // the next sweep tries again
+      }
+    }
+    return killed
   }
 
   async isUp(stationId: string): Promise<boolean | null> {

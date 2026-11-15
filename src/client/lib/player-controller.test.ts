@@ -5,6 +5,8 @@ import {
   INTERRUPT_FIRST_MS,
   INTERRUPT_GIVE_UP_MS,
   LAG_SHOW_S,
+  getPlayerId,
+  PLAYER_ID_KEY,
   PlayerController,
   type PlayerSource,
   VOLUME_KEY,
@@ -44,7 +46,10 @@ class FakeAudio implements AudioLike {
   pause() {
     this.paused = true
   }
-  load() {}
+  loads = 0
+  load() {
+    this.loads++
+  }
   removeAttribute(name: string) {
     if (name === 'src') this.src = ''
   }
@@ -658,6 +663,60 @@ describe('PlayerController live edge', () => {
       await vi.advanceTimersByTimeAsync(0)
       expect(audio.playCalls).toBe(calls)
     })
+    it('an interruption releases the connection: the src is removed and the element reloaded', async () => {
+      const { ctl, audio } = await startLive()
+      const loads = audio.loads
+      interrupt(audio)
+      expect(audio.src).toBe('')
+      expect(audio.loads).toBe(loads + 1)
+      expect(ctl.getState()).toMatchObject({ current: { key: 'live' }, playing: false })
+    })
+    it('after the release every resume path re-opens a fresh stream', async () => {
+      // Safari's own auto-play finds no src: only our paths resume
+      const a = await startLive()
+      a.ctl.resumeOnActive = true
+      interrupt(a.audio)
+      a.session.state = 'active'
+      a.session.emit('statechange')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(a.audio.src).toMatch(/^\/stream\/x\.mp3\?_r=\d+$/)
+      expect(a.ctl.getState().playing).toBe(true)
+
+      const b = await startLive()
+      interrupt(b.audio)
+      b.win.emit('focus')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(b.audio.src).toMatch(/_r=\d+$/)
+      expect(b.ctl.getState().playing).toBe(true)
+
+      const c = await startLive()
+      interrupt(c.audio)
+      c.ctl.resume() // Media Session play
+      await vi.advanceTimersByTimeAsync(0)
+      expect(c.audio.src).toMatch(/_r=\d+$/)
+      expect(c.ctl.getState().playing).toBe(true)
+
+      const d = await startLive()
+      interrupt(d.audio)
+      d.ctl.goLive()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(d.audio.src).toMatch(/_r=\d+$/)
+      expect(d.ctl.getState().playing).toBe(true)
+    })
+    it('re-opening a playing stream releases the old connection and its own pause is not an interruption', async () => {
+      const { ctl, audio } = await startLive()
+      const loads = audio.loads
+      ctl.goLive()
+      audio.emit('pause') // the pause the browser reports for our own release
+      await vi.advanceTimersByTimeAsync(0)
+      expect(audio.loads).toBe(loads + 2) // release + the new src
+      expect(ctl.getState()).toMatchObject({ playing: true })
+      // a real external pause afterwards is still recognised
+      audio.paused = true
+      audio.emit('pause')
+      expect(ctl.getState().playing).toBe(false)
+      expect(audio.src).toBe('')
+    })
     it('a refused resume stays paused and does not retry on its own', async () => {
       const { ctl, win, audio } = await startLive()
       interrupt(audio)
@@ -791,5 +850,36 @@ describe('PlayerController live edge', () => {
       const { ctl } = makeInterruptible()
       expect(() => ctl.toggle(live)).not.toThrow()
     })
+  })
+})
+
+describe('player id', () => {
+  const mem = () => {
+    const m = new Map<string, string>()
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), m }
+  }
+  it('getPlayerId is random, kept in storage and reused', () => {
+    const st = mem()
+    const a = getPlayerId(st)
+    expect(a).toMatch(/^[a-f0-9]{16}$/)
+    expect(st.m.get(PLAYER_ID_KEY)).toBe(a)
+    expect(getPlayerId(st)).toBe(a)
+    expect(getPlayerId(mem())).not.toBe(a)
+  })
+  it('the live stream URL carries pid next to the cache-bust, a file does not', async () => {
+    const audio = new FakeAudio()
+    const ctl = new PlayerController(audio, null, undefined, undefined, 'abc123def456')
+    ctl.toggle(live)
+    await tick()
+    expect(audio.src).toBe('/stream/x.mp3?pid=abc123def456')
+    ctl.goLive()
+    await tick()
+    expect(audio.src).toMatch(/^\/stream\/x\.mp3\?pid=abc123def456&_r=\d+$/)
+    ctl.toggle(track('1'))
+    await tick()
+    expect(audio.src).toBe('/t/1')
+    ctl.toggle({ ...live, src: '/stream/x.mp3?k=tok' })
+    await tick()
+    expect(audio.src).toBe('/stream/x.mp3?k=tok&pid=abc123def456')
   })
 })
