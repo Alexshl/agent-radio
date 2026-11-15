@@ -1,0 +1,16 @@
+"play" = "Грати";
+"stop" = "Стоп";
+"status.playing" = "В ефірі";
+"status.connecting" = "Підключення…";
+"status.stopped" = "Зупинено";
+"status.nourl" = "Вставте посилання на потік";
+"settings.title" = "Потік";
+"settings.url.placeholder" = "https://…/stream/….mp3?k=…";
+"settings.paste" = "Вставити";
+"settings.save" = "Зберегти";
+"settings.clear" = "Видалити посилання";
+"settings.invalid" = "Потрібне посилання http(s)";
+"settings.token" = "Токен";
+"log.title" = "Журнал";
+"log.copy" = "Копіювати журнал";
+"log.empty" = "Подій ще немає";
