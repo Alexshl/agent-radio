@@ -260,6 +260,8 @@ deploy_prod() {
     fi
   fi
   wait_healthy
+  # record what is running now, even if a smoke check fails below (otherwise the next deploy sees phantom config changes)
+  printf 'sha=%s\nliquidsoap=%s\ncaddyfile=%s\n' "$SHA" "$liq_now" "$caddy_now" >"$STATE/prod-state"
 
   # ---- smoke
   local url
@@ -270,9 +272,15 @@ deploy_prod() {
     say 'smoke: no station yet, the stream read is skipped'
   fi
   if [ $smoke = 1 ]; then
-    "$HERE/client/agent-radio" say --wait 'Перевірка після оновлення.' | tee /dev/stderr | grep -q 'played' || die 'smoke: the test message was not played'
+    local said
+    said=$("$HERE/client/agent-radio" say --wait 'Перевірка після оновлення.' 2>&1 || true)
+    printf '%s\n' "$said" >&2
+    if printf '%s' "$said" | grep -q 'skipped'; then
+      say 'smoke: nobody is listening (the deploy itself may have cut the listeners), the test message was skipped'
+    else
+      printf '%s' "$said" | grep -q 'played' || die 'smoke: the test message was not played'
+    fi
   fi
-  printf 'sha=%s\nliquidsoap=%s\ncaddyfile=%s\n' "$SHA" "$liq_now" "$caddy_now" >"$STATE/prod-state"
   banner "PRODUCTION DEPLOYED $SHA"
   say "Rollback:  scripts/deploy.sh rollback   (restores $APP_IMAGE:previous; the database migrations are additive, the old app runs on the new database)"
   say "Database backup: see the 'backup:' line above (./backups)."
