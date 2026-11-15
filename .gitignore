@@ -1,0 +1,9 @@
+.env
+data/
+node_modules/
+dist/
+coverage/
+__pycache__/
+*.pyc
+backups/
+scripts/local/

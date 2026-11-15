@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="113 133 547 454" role="img" aria-label="agent-radio">
+  <mask id="ar-halo" maskUnits="userSpaceOnUse" x="100" y="120" width="570" height="480">
+    <rect x="100" y="120" width="570" height="480" fill="#fff"/>
+    <path d="M185 567 355 238Q362 230 372 230H402Q412 230 419 238L588 567H500L467 490H308L272 567ZM388 320 438 428H336Z" fill="#000" stroke="#000" stroke-width="30" stroke-linejoin="round"/>
+  </mask>
+  <g mask="url(#ar-halo)" fill="none" stroke="#0F9B9A">
+    <path d="M187.5 540.2A240 240 0 1 1 585.5 540.2" stroke-width="27"/>
+    <path d="M217.5 488.4A188 188 0 1 1 555.5 488.4" stroke-width="25"/>
+    <path d="M246.4 443.5A145 145 0 1 1 526.6 443.5" stroke-width="24"/>
+  </g>
+  <path d="M185 567 355 238Q362 230 372 230H402Q412 230 419 238L588 567H500L467 490H308L272 567ZM388 320 438 428H336Z" fill="#0F9B9A" fill-rule="evenodd"/>
+</svg>

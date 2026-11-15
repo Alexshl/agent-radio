@@ -1,0 +1,93 @@
+name: agent-radio
+
+# Container names derive from the compose project (`docker compose -p agent-radio-dev ...` gives a separate dev stack with its own volumes).
+# liquidsoap and icecast live on a network without internet access: relayed radio streams reach the engine only through the app
+# (src/server/routes/relay.ts, SSRF-safe), so a user-provided stream URL can never make the engine call internal addresses.
+networks:
+  internal:
+    internal: true
+  edge: {}
+  # app <-> tts-local only (the sidecar publishes no port; it also sits on `edge` for the first-run model downloads)
+  tts:
+    internal: true
+
+services:
+  icecast:
+    image: libretime/icecast:2.4.4
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set in .env}
+      ICECAST_ADMIN_PASSWORD: ${ICECAST_ADMIN_PASSWORD:?set in .env}
+      ICECAST_RELAY_PASSWORD: ${ICECAST_ADMIN_PASSWORD:?set in .env}
+
+  liquidsoap:
+    image: savonet/liquidsoap:v2.4.6
+    restart: unless-stopped
+    depends_on: [icecast]
+    command: ["/etc/liquidsoap/radio.liq"]
+    networks: [internal]
+    environment:
+      ICECAST_HOST: icecast
+      ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set in .env}
+      CONTROL_PORT: "8080"
+      STREAM_BITRATE: ${STREAM_BITRATE:-192}
+    volumes:
+      - ./liquidsoap/radio.liq:/etc/liquidsoap/radio.liq:ro
+      - shared:/shared:ro
+      - ${MUSIC_DIR:?set in .env}:/music:ro
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on: [liquidsoap, icecast]
+    networks: [internal, edge, tts]
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${PORT:-8790}:8790"
+    environment:
+      PORT: "8790"
+      DATA_DIR: /data
+      SHARED_DIR: /shared
+      MUSIC_DIR: /music
+      PIPER_MODELS_DIR: /data/piper
+      ICECAST_URL: http://icecast:8000
+      ENGINE_URL: http://liquidsoap:8080
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      APP_SECRET: ${APP_SECRET:-}
+      TTS_PROVIDER: ${TTS_PROVIDER:-piper}
+      TTS_VOICE: ${TTS_VOICE:-uk_UA-mykyta-high}
+      TTS_LANG: ${TTS_LANG:-uk}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:${PORT:-8790}}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      RELAY_HOST: app
+      RELAY_PORT: "8792"
+      # local neural voices sidecar (profile `local-tts`); an unreachable sidecar only means the voices are not offered
+      TTS_LOCAL_URL: ${TTS_LOCAL_URL-http://tts-local:8795}
+    volumes:
+      - data:/data
+      - shared:/shared
+      # read-write: uploads from the web UI go to /music/uploads, deleted tracks to /music/.trash (liquidsoap above mounts it read-only)
+      - ${MUSIC_DIR:?set in .env}:/music
+
+  # Local neural voices (CPU only; opt-in: set COMPOSE_PROFILES=local-tts in .env, then `docker compose up -d --build tts-local`).
+  # First start downloads several GB of models into the ttsmodels volume.
+  tts-local:
+    profiles: [local-tts]
+    build: ./tts-local
+    restart: unless-stopped
+    networks: [tts, edge]
+    # the host also runs the radio: keep the voices from starving liquidsoap
+    cpus: ${TTS_LOCAL_CPUS:-6}
+    mem_limit: ${TTS_LOCAL_MEM:-10g}
+    environment:
+      TTS_LOCAL_ENGINES: ${TTS_LOCAL_ENGINES:-styletts2}
+      TTS_LOCAL_F5: ${TTS_LOCAL_F5:-0}
+      TTS_LOCAL_THREADS: ${TTS_LOCAL_THREADS:-6}
+    volumes:
+      - ttsmodels:/models
+
+volumes:
+  data:
+  shared:
+  ttsmodels:
