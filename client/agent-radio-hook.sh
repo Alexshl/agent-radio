@@ -44,7 +44,8 @@ def entries():
 ask_ids = set()
 events = []  # chronological: ("user_text"|"ask_answer"|"radio")
 for e in entries():
-    if e.get("isSidechain"):
+    # skip subagents and injected meta messages (hook feedback, skill bodies, reminders)
+    if e.get("isSidechain") or e.get("isMeta"):
         continue
     msg = e.get("message") or {}
     content = msg.get("content")
@@ -73,7 +74,9 @@ for e in entries():
 for ev in reversed(events):
     if ev == "radio":
         sys.exit(0)
-    if ev in ("user_text", "ask_answer"):
+    # a question answered inside the turn starts a new window for the next question,
+    # but not for the end of the turn: one summary per user message is enough there
+    if ev == "user_text" or (ev == "ask_answer" and mode == "question"):
         break
 
 REASONS = {
