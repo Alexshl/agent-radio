@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, FolderOpen, Info, Music, Pause, Play, Radio as RadioIcon, Volume2 } from 'lucide-react'
+import { Copy, FolderOpen, Info, Music, Pause, Play, Radio as RadioIcon, Settings2, Volume2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { get, patch, post, put } from '../api/client'
@@ -676,7 +676,19 @@ function MobileRadio({ r, live }: { r: Radio; live?: Live }) {
   ]
   return (
     <div className="m-only stack" style={{ gap: 14 }}>
-      <section className="card card-b stack m-card" style={{ gap: 14, alignItems: 'center', textAlign: 'center', padding: '22px 16px' }}>
+      <section
+        className="card card-b stack m-card"
+        style={{ gap: 14, alignItems: 'center', textAlign: 'center', padding: '22px 16px', position: 'relative' }}
+      >
+        <button
+          type="button"
+          className="btn icon ghost"
+          aria-label={S.radio.mobileSettingsAria}
+          style={{ position: 'absolute', top: 10, right: 10, width: 44, height: 44 }}
+          onClick={() => document.getElementById('m-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+        >
+          <Settings2 size={18} aria-hidden="true" />
+        </button>
         <span className={`bdg${listening ? ' t-success' : ''}`}>{listening ? S.radio.youListen : S.radio.stopped}</span>
         <button
           type="button"
@@ -728,9 +740,12 @@ function MobileRadio({ r, live }: { r: Radio; live?: Live }) {
           </div>
         ))}
       </section>
-      <div className="muted" style={{ fontSize: 12, textAlign: 'center' }}>
-        {S.radio.mobileHint}
+      <div id="m-settings" className="lbl" style={{ scrollMarginTop: 64 }}>
+        {S.radio.mobileSettings}
       </div>
+      <VoiceCard r={r} />
+      <PhoneCard r={r} />
+      <SourceCard key={r.station.id} r={r} />
     </div>
   )
 }

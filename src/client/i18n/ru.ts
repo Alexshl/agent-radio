@@ -186,6 +186,8 @@ export const ru = {
     mobileHint: 'В фоне надёжнее слушать через VLC: ссылка — в разделе «Слушать».',
     mobileVoiceLine: (voice: string, duck: number) => `Голос ${voice} · приглушение −${duck} dB`,
     mobileMusic: 'Музыка',
+    mobileSettings: 'Настройки эфира',
+    mobileSettingsAria: 'Перейти к настройкам эфира',
     playAria: 'Слушать',
     stopAria: 'Остановить',
   },
