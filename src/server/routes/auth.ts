@@ -26,6 +26,7 @@ import {
   verifyRegistration,
 } from '../lib/passkeys'
 import { checkPasswordPolicy, hashPassword, spendPasswordCheck, verifyPassword } from '../lib/password'
+import { learnView } from '../learn/plays'
 import { findUserByEmail, stationOfUser } from '../stations'
 
 const loginBody = z.object({ email: z.string().trim().min(1).max(320), password: z.string().min(1).max(500) })
@@ -160,7 +161,9 @@ export function authRoutes(deps: FullDeps) {
     return c.json({ ok: true })
   })
 
-  r.get('/me', requireSession(db), (c) => c.json({ user: publicUser(c.get('user')), features: { passkeys: true } }))
+  r.get('/me', requireSession(db), (c) =>
+    c.json({ user: publicUser(c.get('user')), features: { passkeys: true }, learn: learnView(db, c.get('user')) }),
+  )
 
   // Changing the own password needs the current one; other sessions are signed out.
   r.post('/password', requireSession(db), async (c) => {

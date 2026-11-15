@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { and, desc, eq, gte } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { messages, presets, stations, users } from '../db/schema'
+import { messages, presets, stations, tracks, users } from '../db/schema'
 import type { FullDeps } from '../deps'
 import type { AppEnv } from '../env'
 import { SUMMARY_LANGS } from '../lang'
@@ -19,6 +19,7 @@ import { nowIso, randomToken } from '../lib/ids'
 import { serveFile } from '../lib/serve-file'
 import { getSetting } from '../lib/settings'
 import { createPlaylist, deletePlaylist, getPlaylist, listPlaylists, playlistBody, updatePlaylist } from '../playlists'
+import { applyLearnMode, learnAvailable, learnView, setSkip } from '../learn/plays'
 import { replayBody, replayMessages } from '../replay'
 import { airMessage, notReplay, spokenText } from '../say'
 import { changeSource } from '../source'
@@ -54,6 +55,8 @@ const settingsBody = z.object({
   duckDb: z.number().min(0).max(40).optional(),
   ...levelsSchema.shape,
   speechRate: z.number().min(RATE_RANGE.min).max(RATE_RANGE.max).optional(),
+  learnMode: z.boolean().optional(),
+  learnEvery: z.number().int().min(1).max(3).optional(),
 })
 
 export function listenLinks(config: FullDeps['config'], st: StationRow) {
@@ -117,6 +120,7 @@ export function appRoutes(deps: FullDeps) {
         ...listenLinks(config, st),
       },
       settings: { voice: user.voice, lang: user.lang, speakSession: user.speakSession, speechRate: user.speechRate },
+      learn: learnView(db, user),
       allowOwnUrls: user.role === 'admin' || getSetting(db, 'allowOwnUrls'),
       defaultVoice: registry.defaultVoiceKey(user.lang),
       presets: db.select().from(presets).orderBy(presets.position).all(),
@@ -176,6 +180,23 @@ export function appRoutes(deps: FullDeps) {
         throw badRequest('voice_unavailable', 'This voice is not available')
     }
     const userSet: Partial<typeof users.$inferInsert> = {}
+    if (b.learnEvery !== undefined) userSet.learnEvery = b.learnEvery
+    if (b.learnMode !== undefined && b.learnMode !== !!user.learnMode) {
+      if (b.learnMode && !learnAvailable(db, user.id))
+        throw badRequest('learn_unavailable', 'Learn mode needs one of your own playlists as the source')
+      // the flag is stored, the source re-applied, and the flag reverted when the engine refuses
+      db.update(users)
+        .set({ learnMode: b.learnMode ? 1 : 0, updatedAt: nowIso() })
+        .where(eq(users.id, user.id))
+        .run()
+      try {
+        await applyLearnMode(deps, stationOf(user.id), b.learnMode)
+      } catch (e) {
+        db.update(users).set({ learnMode: user.learnMode, updatedAt: nowIso() }).where(eq(users.id, user.id)).run()
+        console.error('learn mode switch failed:', e instanceof Error ? e.message : e)
+        throw new HttpError(503, 'engine_unavailable', 'Engine did not accept the change')
+      }
+    }
     if (b.voice !== undefined) userSet.voice = b.voice
     if (b.lang) userSet.lang = b.lang
     if (b.speakSession !== undefined) userSet.speakSession = b.speakSession
@@ -220,6 +241,17 @@ export function appRoutes(deps: FullDeps) {
         .where(eq(stations.id, st.id))
         .run()
     return c.json({ ok: true })
+  })
+
+  // "I know this song / not interesting": the song is queued without an intro and is not counted for the every-N counter
+  r.put('/learn/songs/:trackId/skip', async (c) => {
+    const body = z.object({ skip: z.boolean() }).safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body', 'Expected {skip}')
+    const trackId = c.req.param('trackId')
+    // the library is shared: every track in it is reachable for every user
+    if (!db.select({ id: tracks.id }).from(tracks).where(eq(tracks.id, trackId)).get()) throw notFound('Track not found')
+    setSkip(db, c.get('user').id, trackId, body.data.skip)
+    return c.json({ ok: true, skip: body.data.skip })
   })
 
   r.post('/test', async (c) => {

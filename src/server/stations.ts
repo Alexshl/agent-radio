@@ -125,7 +125,10 @@ export function engineSpec(db: Db, config: Config, st: StationRow): EngineSource
       st.id,
       pl.tracks.map((t) => t.path),
     )
-    return { type: 'playlist', path, mode: pl.orderMode === 'ordered' ? 'normal' : 'randomize' }
+    const mode = pl.orderMode === 'ordered' ? 'normal' : 'randomize'
+    // learn mode: the app queues the songs itself, the same list plays when the queue is empty
+    if (userById(db, st.userId)?.learnMode) return { type: 'queue', path, mode }
+    return { type: 'playlist', path, mode }
   }
   return { type: 'silence' }
 }

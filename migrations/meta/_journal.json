@@ -64,6 +64,13 @@
       "when": 1794820000000,
       "tag": "0008_control_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794830000000,
+      "tag": "0009_learn_language",
+      "breakpoints": true
     }
   ]
 }

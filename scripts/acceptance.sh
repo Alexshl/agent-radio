@@ -236,6 +236,108 @@ else
   esac
 fi
 
+# ---- 6. learn mode (queue source: the app queues the song, a spoken intro first)
+log '--- 6. learn mode'
+# one script for the app container: ACTION = on | off | state | restore (the db and the engine are driven directly, the app scheduler does the rest)
+LEARN_JS=$(cat <<'JS'
+import Database from 'better-sqlite3'
+import { mkdirSync, writeFileSync } from 'node:fs'
+const db = new Database('/data/radio.db')
+const st = db.prepare('select s.id, s.user_id, s.source, u.learn_mode, u.learn_every from stations s join users u on u.id = s.user_id limit 1').get()
+const engine = async (path, body) => (await fetch('http://liquidsoap:8080' + path, { method: 'POST', body: JSON.stringify(body) })).ok
+const m3u = '/shared/playlists/' + st.id + '.m3u'
+if (ACTION === 'on') {
+  const tracks = db.prepare('select path from tracks order by path limit 4').all()
+  if (tracks.length < 2) { console.log('NOTRACKS'); process.exit(0) }
+  mkdirSync('/shared/playlists', { recursive: true })
+  writeFileSync(m3u, tracks.map((t) => '/music/' + t.path).join('\n') + '\n')
+  const now = new Date().toISOString()
+  db.prepare('delete from playlist_tracks where playlist_id = ?').run('acceptance-learn')
+  db.prepare('delete from playlists where id = ?').run('acceptance-learn')
+  db.prepare("insert into playlists (id, user_id, name, order_mode, created_at, updated_at) values ('acceptance-learn', ?, 'acceptance learn', 'shuffle', ?, ?)").run(st.user_id, now, now)
+  db.prepare('select id from tracks order by path limit 4').all().forEach((t, i) => db.prepare("insert into playlist_tracks (playlist_id, track_id, position) values ('acceptance-learn', ?, ?)").run(t.id, i))
+  db.prepare('delete from learn_plays where station_id = ?').run(st.id)
+  db.prepare('update stations set source = ?, learn_bag = null, learn_counter = 0 where id = ?').run(JSON.stringify({ type: 'userplaylist', playlistId: 'acceptance-learn' }), st.id)
+  db.prepare('update users set learn_mode = 1, learn_every = 1 where id = ?').run(st.user_id)
+  // the app queues the first song within ~5 s; the queue source takes it over right away
+  await new Promise((r) => setTimeout(r, 9000))
+  await engine('/station/set_source', { id: st.id, spec: { type: 'queue', path: m3u, mode: 'randomize' } })
+  console.log('OK')
+} else if (ACTION === 'off') {
+  db.prepare('update users set learn_mode = 0 where id = ?').run(st.user_id)
+  await new Promise((r) => setTimeout(r, 9000))
+  await engine('/music/flush', { id: st.id })
+  await engine('/station/set_source', { id: st.id, spec: { type: 'playlist', path: m3u, mode: 'randomize' } })
+  console.log('OK')
+} else if (ACTION === 'state') {
+  const rows = db.prepare('select status, track_msg, intro_msg from learn_plays where station_id = ? order by planned_at').all(st.id)
+  const states = (await (await fetch('http://liquidsoap:8080/msg/states')).json()).states
+  const by = Object.fromEntries(states.map((s) => [s.id, s]))
+  const first = rows.find((r) => r.intro_msg && by[r.intro_msg] && by[r.track_msg])
+  const ok = !!first && by[first.intro_msg].started > 0 && by[first.track_msg].started >= by[first.intro_msg].ended - 0.5 && by[first.intro_msg].ended > 0
+  console.log(JSON.stringify({ rows: rows.length, open: rows.filter((r) => ['planned', 'pushed', 'intro'].includes(r.status)).length, playing: rows.filter((r) => ['playing', 'done'].includes(r.status)).length, introThenSong: ok }))
+} else if (ACTION === 'restore') {
+  const o = JSON.parse(Buffer.from(ORIG, 'base64').toString())
+  db.prepare('update stations set source = ? where id = ?').run(o.source, st.id)
+  db.prepare('update users set learn_mode = ?, learn_every = ? where id = ?').run(o.learn_mode, o.learn_every, st.user_id)
+  db.prepare('delete from playlist_tracks where playlist_id = ?').run('acceptance-learn')
+  db.prepare('delete from playlists where id = ?').run('acceptance-learn')
+  await engine('/music/flush', { id: st.id })
+  console.log('OK')
+} else if (ACTION === 'orig') {
+  console.log(JSON.stringify({ source: st.source, learn_mode: st.learn_mode, learn_every: st.learn_every }))
+}
+JS
+)
+learn_ctl() { appjs "const ACTION='$1'; const ORIG='${2:-}'; $LEARN_JS" 2>&1 | tail -n 1; }
+if [ -z "$COMPOSE" ]; then
+  skip 'learn mode (ACCEPT_COMPOSE not set)'
+else
+  ORIG_LEARN=$(learn_ctl orig)
+  ON=$(learn_ctl on)
+  if [ "$ON" = NOTRACKS ]; then
+    skip 'learn mode: the library has fewer than 2 tracks'
+  elif [ "$ON" != OK ]; then
+    fail "could not switch learn mode on: $ON"
+  else
+    listener 150 s6 --min-bytes 2000000 --max-gap 4
+    end=$((SECONDS + 120))
+    LS=""
+    while [ $SECONDS -lt $end ]; do
+      LS=$(learn_ctl state)
+      [ "$(printf '%s' "$LS" | jfield playing)" -ge 1 ] 2>/dev/null && break
+      sleep 3
+    done
+    log "learn state: $LS"
+    if [ "$(printf '%s' "$LS" | jfield playing)" -ge 1 ] 2>/dev/null; then pass 'learn on: the queued song reached playing'; else fail "learn on: no queued song reached playing: $LS"; fi
+    if [ "$(printf '%s' "$LS" | jfield introThenSong)" = true ]; then pass 'learn on: the spoken intro played, then the song'; else fail "learn on: the intro did not play before the song: $LS"; fi
+    # one song is always queued ahead
+    if [ "$(printf '%s' "$LS" | jfield open)" -ge 1 ] 2>/dev/null; then pass 'learn on: the next song is queued ahead'; else log "note: no song queued ahead yet ($LS)"; fi
+    log 'redeploying the app under learn mode ...'
+    $COMPOSE up -d --build --force-recreate --no-deps app >"$WORK/redeploy-learn.log" 2>&1 || fail "could not redeploy the app: $(tail -n 3 "$WORK/redeploy-learn.log")"
+    end=$((SECONDS + 120))
+    until curl -fsS -m 3 -o /dev/null "$BASE/healthz" 2>/dev/null; do
+      [ $SECONDS -ge $end ] && break
+      sleep 1
+    done
+    listener_done s6 >/dev/null
+    log "capture: $(cat "$WORK/s6.json")"
+    if probe_ok s6; then pass 'learn on: no gap in the stream across the app redeploy'; else fail "learn on: stream broke during the redeploy: $(cat "$WORK/s6.json")"; fi
+    OFF=$(learn_ctl off)
+    if [ "$OFF" = OK ]; then
+      sleep 12
+      LS=$(learn_ctl state)
+      N1=$(printf '%s' "$LS" | jfield rows)
+      sleep 12
+      N2=$(learn_ctl state | jfield rows)
+      if [ -n "$N1" ] && [ "$N1" = "$N2" ] && [ "$(printf '%s' "$LS" | jfield open)" = 0 ]; then pass 'learn off: nothing is queued any more, the playlist plays'; else fail "learn off: songs are still queued ($N1 -> $N2, $LS)"; fi
+    else
+      fail "could not switch learn mode off: $OFF"
+    fi
+    [ -n "$ORIG_LEARN" ] && learn_ctl restore "$(printf '%s' "$ORIG_LEARN" | base64 -w0)" >/dev/null
+  fi
+fi
+
 echo
 echo '================ acceptance summary ================'
 for s in "${STEPS[@]}"; do echo "$s"; done

@@ -6,6 +6,11 @@
 #   POST /station/remove       {"id": "..."}
 #   POST /station/set_duck     {"id": "...", "duck_db": 14}
 #   POST /station/set_levels   {"id": "...", "music_db": -8, "voice_db": 4, "track_db": 0}   (any subset; applied live)
+#   POST /station/set_source   ... {"type": "queue", "path": "/x.m3u", "mode": "randomize"|"normal"}   ("learn" mode: songs the app queues first, the playlist
+#                              plays only when the queue is empty; the switch happens on track boundaries)
+#   POST /music/push           {"id": "...", "path": "/music/x.mp3", "msg": "<id>", "title": "..."?, "amplify_db": -6.0?}   (a song or a spoken intro for the queue source)
+#   POST /music/flush          {"id": "..."}   (drops what is queued, not what is playing)
+#   GET  /music/queue?id=...   {"length": n}   (queued, not yet playing)
 #   POST /voice/push           {"id": "...", "path": "/clips/x.mp3", "msg": "<message id>"?}   (spoken message: music ducked)
 #   POST /track/push           {"id": "...", "path": "/clips/x.mp3", "msg": "<message id>"?}   (uploaded file: music muted, voice messages wait for it)
 #   GET  /msg/states           what happened to the pushed clips that carry a message id: queued -> playing -> done (the app polls this)
@@ -68,14 +73,38 @@ def clip_uri(path, msg) =
   msg == "" ? path : "annotate:msg_id=\"#{msg}\":#{path}"
 end
 
-def music_source(spec) =
+# annotate: values are quoted strings, so \ and " are escaped
+def annot_quote(v) =
+  string.replace(pattern="\"", fun (_) -> "\\\"", string.replace(pattern="\\\\", fun (_) -> "\\\\", v))
+end
+
+# a queued song / intro: msg_id for the delivery state, an optional title for the stream metadata and an optional gain
+# (liq_amplify is read by the amplify that follows the queue, in dB)
+def music_uri(path, msg, title, amplify_db) =
+  fields = []
+  fields = msg == "" ? fields : [...fields, "msg_id=\"#{msg}\""]
+  fields = title == "" ? fields : [...fields, "title=\"#{annot_quote(title)}\""]
+  fields = amplify_db == null ? fields : [...fields, "liq_amplify=\"#{amplify_db ?? 0.0} dB\""]
+  joined = string.concat(separator=",", fields)
+  list.length(fields) == 0 ? path : "annotate:#{joined}:#{path}"
+end
+
+def playlist_source(spec) =
+  mksafe(playlist(mode=(if (spec.mode ?? "") == "normal" then "normal" else "randomize" end), reload_mode="watch", spec.path ?? ""))
+end
+
+def music_source(spec, music_q) =
   t = spec.type
   if t == "relay" then
     # input.http runs on its own (network) clock: buffer() decouples it from the station clock;
     # mksafe falls back to silence whenever the relay is down, input.http reconnects by itself (poll_delay)
     mksafe(buffer(buffer=3.0, max=12.0, input.http(poll_delay=5.0, user_agent=relay_user_agent, spec.url ?? "")))
   elsif t == "playlist" then
-    mksafe(playlist(mode=(if spec.mode == "normal" then "normal" else "randomize" end), reload_mode="watch", spec.path ?? ""))
+    playlist_source(spec)
+  elsif t == "queue" then
+    # the app queues the songs (learn mode); while the queue is empty the playlist plays, switching only on track boundaries
+    pl = playlist_source(spec)
+    mksafe(fallback(track_sensitive=true, transition_length=0., [music_q, (pl : source)]))
   else
     blank()
   end
@@ -97,6 +126,14 @@ def add_station(id, duck_db, music_db, voice_db, track_db) =
   voice_q.on_metadata(synchronous=false, clip_watcher())
   source.on_end(id="voice_end_#{id}", delay=0., voice_q, clip_ended)
   voice = voice_q
+  # songs / intros queued by the app (learn mode), used only by a "queue" source; liq_amplify (dB) levels an intro to the voice
+  music_q = request.queue(id="music_#{id}", interactive=false)
+  def music_push(uri) = music_q.push.uri(uri) end
+  def music_flush() = music_q.set_queue([]) end
+  def music_length() = music_q.length() end
+  music_q.on_metadata(synchronous=false, clip_watcher())
+  source.on_end(id="music_end_#{id}", delay=0., music_q, clip_ended)
+  music_qa = amplify(1.0, music_q)
   # uploaded files: while one is queued/playing it replaces the whole bed (music muted, not ducked);
   # a voice message that arrives meanwhile stays in its queue (the bed is not pulled) and plays right after the file
   track_q = request.queue(id="track_#{id}", interactive=false)
@@ -131,7 +168,7 @@ def add_station(id, duck_db, music_db, voice_db, track_db) =
     host=icecast_host, port=icecast_port, password=icecast_password,
     mount="/#{id}", name="agent-radio #{id}", mksafe(limited))
   def set_source(spec) =
-    pending := music.prepare(music_source(spec))
+    pending := music.prepare(music_source(spec, music_qa))
   end
   def set_levels(m, v, t) =
     music_gain := m ?? music_gain()
@@ -141,7 +178,7 @@ def add_station(id, duck_db, music_db, voice_db, track_db) =
   def levels() =
     {music_db=music_gain(), voice_db=voice_gain(), track_db=track_gain()}
   end
-  {set_source=set_source, voice=voice_q, track=track_q, duck=duck, set_levels=set_levels, levels=levels, out=out}
+  {set_source=set_source, voice=voice_q, music_push=music_push, music_flush=music_flush, music_length=music_length, track=track_q, duck=duck, set_levels=set_levels, levels=levels, out=out}
 end
 
 def reply(resp, status, data) =
@@ -150,7 +187,7 @@ def reply(resp, status, data) =
 end
 
 def parse_body(req) =
-  let json.parse (x : {id : string, spec : {type : string, url : string?, path : string?, mode : string?}?, path : string?, duck_db : float?, music_db : float?, voice_db : float?, track_db : float?, msg : string?}) = req.body()
+  let json.parse (x : {id : string, spec : {type : string, url : string?, path : string?, mode : string?}?, path : string?, duck_db : float?, music_db : float?, voice_db : float?, track_db : float?, msg : string?, title : string?, amplify_db : float?}) = req.body()
   x
 end
 
@@ -205,6 +242,38 @@ harbor.http.register(port=control_port, method="POST", "/voice/push", handler(fu
     reply(resp, 404, {ok=false, error="unknown station"})
   end
 end))
+
+harbor.http.register(port=control_port, method="POST", "/music/push", handler(fun (x, resp) -> begin
+  if list.assoc.mem(x.id, stations()) then
+    s = list.assoc(x.id, stations())
+    msg = x.msg ?? ""
+    if msg != "" then set_msg_state(msg, "queued") end
+    s.music_push(music_uri(x.path ?? "", msg, x.title ?? "", x.amplify_db))
+    reply(resp, 200, {ok=true})
+  else
+    reply(resp, 404, {ok=false, error="unknown station"})
+  end
+end))
+
+harbor.http.register(port=control_port, method="POST", "/music/flush", handler(fun (x, resp) -> begin
+  if list.assoc.mem(x.id, stations()) then
+    s = list.assoc(x.id, stations())
+    s.music_flush()
+    reply(resp, 200, {ok=true})
+  else
+    reply(resp, 404, {ok=false, error="unknown station"})
+  end
+end))
+
+harbor.http.register(port=control_port, method="GET", "/music/queue", fun (req, resp) -> begin
+  id = req.query["id"]
+  if list.assoc.mem(id, stations()) then
+    s = list.assoc(id, stations())
+    reply(resp, 200, {ok=true, error="", length=s.music_length()})
+  else
+    reply(resp, 404, {ok=false, error="unknown station", length=0})
+  end
+end)
 
 harbor.http.register(port=control_port, method="POST", "/station/set_duck", handler(fun (x, resp) -> begin
   if list.assoc.mem(x.id, stations()) then

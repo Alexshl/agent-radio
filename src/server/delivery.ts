@@ -11,6 +11,7 @@ import type { Db } from './db/client'
 import { messages, stations } from './db/schema'
 import type { FullDeps } from './deps'
 import type { EngineMsgState } from './engine/client'
+import { introActive } from './learn/plays'
 import { LISTENER_GRACE_MS } from './listeners'
 import { stationById } from './stations'
 
@@ -104,7 +105,8 @@ export class Delivery {
     const m = messageById(db, id)
     if (!m) return 'skipped'
     const ls = await this.deps.listeners.observe(stationId)
-    if ((ls.listeners ?? 0) > 0) {
+    // learn mode: a spoken song intro is on air, the message waits for it (the 2 s tick pushes it afterwards)
+    if ((ls.listeners ?? 0) > 0 && !introActive(db, stationId, this.now())) {
       await this.push(m)
       return 'onair'
     }
@@ -157,7 +159,7 @@ export class Delivery {
             patchMessage(db, m.id, { status: 'failed', reason: 'push_failed' })
           } else if (now - Date.parse(m.createdAt) >= HOLD_MS) {
             patchMessage(db, m.id, { status: 'skipped', reason: 'expired' })
-          } else if (await hasListener(stationId)) {
+          } else if ((await hasListener(stationId)) && !introActive(db, stationId, now)) {
             await this.push(m)
           }
           continue

@@ -2,12 +2,15 @@ import { serve } from '@hono/node-server'
 import { createApp } from './app'
 import { bootstrap, seedAdmin, seedPresets } from './bootstrap'
 import { closeStale } from './delivery'
+import { LearnScheduler } from './learn/scheduler'
 import { cleanup } from './retention'
 import { relayRoutes } from './routes/relay'
 import { syncEngine } from './stations'
 
 const deps = bootstrap()
 const { config } = deps
+
+const learn = new LearnScheduler(deps)
 
 const admin = await seedAdmin(deps)
 if (admin) console.log(`created admin ${admin.user.email}`)
@@ -21,6 +24,8 @@ async function sync() {
   try {
     const r = await syncEngine(deps.db, config, deps.engine)
     if (r.added || r.removed) console.log(`engine sync: ${r.added} station(s) pushed, ${r.removed} removed`)
+    // learn mode: keep the next song queued (after the sync, so that a restarted engine has its stations back)
+    await learn.tick()
   } catch (e) {
     console.error('engine sync failed:', e instanceof Error ? e.message : e)
   } finally {
