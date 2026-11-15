@@ -8,6 +8,8 @@
 # The API key is asked for on the terminal (not echoed) or taken from AGENT_RADIO_KEY; it is never printed.
 # It can also add the voice-summary rule (client/claude-md-snippet*.md) to ~/.claude/CLAUDE.md: only after a y/N answer on the terminal or with
 # AGENT_RADIO_CLAUDE_MD=1, and only when the rule's heading is not in the file yet.
+# The "radio guard" hook script is installed to ~/.local/share/agent-radio/agent-radio-hook.sh; it is wired into ~/.claude/settings.json
+# (Stop + PreToolUse AskUserQuestion) only after a y/N answer on the terminal or with AGENT_RADIO_HOOKS=1 (backup first, idempotent).
 # Safe to run again: the command and the skill are replaced, an existing key is kept.
 set -eu
 
@@ -17,6 +19,9 @@ CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agent-radio"
 CONF_FILE="$CONF_DIR/env"
 SKILL_DIR="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}/agent-radio"
 CLAUDE_MD="${CLAUDE_MD_FILE:-$HOME/.claude/CLAUDE.md}"
+HOOK_DIR="${AGENT_RADIO_HOOK_DIR:-$HOME/.local/share/agent-radio}"
+HOOK_FILE="$HOOK_DIR/agent-radio-hook.sh"
+SETTINGS="${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'install: %s\n' "$*" >&2; exit 1; }
@@ -71,6 +76,89 @@ else
     *) say "rule:    not added ($URL/client/claude-md-snippet.md has the text)" ;;
   esac
 fi
+
+# ---- the radio guard hook: script always installed, settings.json changed only with consent ----
+mkdir -p "$HOOK_DIR"
+fetch agent-radio-hook.sh "$HOOK_FILE" || die "could not download the hook from $URL"
+chmod 755 "$HOOK_FILE"
+say "hook:    $HOOK_FILE"
+
+hook_manual() {
+  say "hook:    not enabled. To enable, add to $SETTINGS:"
+  say "         \"hooks\": {\"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"$HOOK_FILE stop\", \"timeout\": 10}]}],"
+  say "                    \"PreToolUse\": [{\"matcher\": \"AskUserQuestion\", \"hooks\": [{\"type\": \"command\", \"command\": \"$HOOK_FILE question\", \"timeout\": 10}]}]}"
+}
+
+add_hooks=""
+if [ "${AGENT_RADIO_HOOKS:-}" = 1 ]; then
+  add_hooks=y
+elif (: </dev/tty) 2>/dev/null; then
+  printf 'Enable the radio guard hook in %s (reminds the agent to send a spoken summary when you listen)? [y/N] ' "$SETTINGS" >/dev/tty
+  read -r add_hooks </dev/tty || add_hooks=""
+fi
+case $add_hooks in
+  y|Y|yes|YES)
+    if ! command -v python3 >/dev/null 2>&1; then
+      say "hook:    python3 is missing, cannot edit settings.json automatically"
+      hook_manual
+    else
+      mkdir -p "$(dirname "$SETTINGS")"
+      AR_SETTINGS="$SETTINGS" AR_HOOK="$HOOK_FILE" python3 - <<'PYEOF' || say "hook:    settings.json was not changed"
+import json, os, shutil, sys
+
+path, hook = os.environ["AR_SETTINGS"], os.environ["AR_HOOK"]
+data = {}
+if os.path.exists(path) and os.path.getsize(path) > 0:
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        assert isinstance(data, dict)
+    except Exception:
+        print("hook:    %s is not valid JSON, left untouched" % path)
+        sys.exit(1)
+
+def has(entries, cmd):
+    return any(
+        h.get("command") == cmd
+        for e in entries if isinstance(e, dict)
+        for h in (e.get("hooks") or []) if isinstance(h, dict)
+    )
+
+hooks = data.setdefault("hooks", {})
+if not isinstance(hooks, dict):
+    print("hook:    unexpected 'hooks' value in %s, left untouched" % path)
+    sys.exit(1)
+changed = False
+for event, matcher, mode in (("Stop", None, "stop"), ("PreToolUse", "AskUserQuestion", "question")):
+    cmd = "%s %s" % (hook, mode)
+    entries = hooks.setdefault(event, [])
+    if not isinstance(entries, list):
+        print("hook:    unexpected hooks.%s in %s, left untouched" % (event, path))
+        sys.exit(1)
+    if has(entries, cmd):
+        continue
+    entry = {"hooks": [{"type": "command", "command": cmd, "timeout": 10}]}
+    if matcher:
+        entry = {"matcher": matcher, **entry}
+    entries.append(entry)
+    changed = True
+
+if not changed:
+    print("hook:    already enabled in %s" % path)
+    sys.exit(0)
+text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+json.loads(text)
+if os.path.exists(path):
+    shutil.copy2(path, path + ".agent-radio.bak")
+tmp = path + ".tmp"
+with open(tmp, "w", encoding="utf-8") as f:
+    f.write(text)
+os.replace(tmp, path)
+print("hook:    enabled in %s (backup: %s.agent-radio.bak)" % (path, path))
+PYEOF
+    fi ;;
+  *) hook_manual ;;
+esac
 
 if ! in_path "$BIN_DIR"; then
   say "note:    $BIN_DIR is not in your PATH; add this to your shell profile:  export PATH=\"$BIN_DIR:\$PATH\""

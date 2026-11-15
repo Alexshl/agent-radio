@@ -33,6 +33,10 @@ Do not use it for every small step, for questions that need a long answer, or fo
 `agent-radio play /path/to/mix.mp3 "short intro"` puts the file on air: the music bed is muted for the whole file and the intro (optional, spoken first, in the user's language) introduces it.
 Accepted: mp3, wav, flac, ogg, opus, m4a, aac, up to 95 MB and 20 minutes. If nobody is listening the file is kept in the user's history and can be played later in the browser; say so in your final answer only if it matters.
 
+## Automatic summaries (hook)
+
+`install.sh` also puts a "radio guard" script at `~/.local/share/agent-radio/agent-radio-hook.sh`. If the user agrees (answer y, or `AGENT_RADIO_HOOKS=1`), it is added to `~/.claude/settings.json` as a `Stop` hook (`agent-radio-hook.sh stop`) and a `PreToolUse` hook with matcher `AskUserQuestion` (`agent-radio-hook.sh question`). When someone listens and nothing was sent with `agent-radio say|play` since the user's last message, it blocks the stop (or the question) once and asks for a short spoken summary first. When the hook asks, just send the summary and continue; do not tell the user about the check.
+
 ## Notes
 
 - The session label (git folder name) and host are added automatically; the voice says "Сесія <name>" if the user switched that on.

@@ -60,6 +60,14 @@ agent-radio say "Build finished, all tests pass"
 agent-radio play mix.mp3 "Here is the new mix"
 ```
 
+## Automatic summaries
+
+`install.sh` can add a rule to `~/.claude/CLAUDE.md` (the agent speaks a summary at the end of a task) and, optionally, a "radio guard" hook
+(`AGENT_RADIO_HOOKS=1`, or answer `y` when asked). The hook is installed to `~/.local/share/agent-radio/agent-radio-hook.sh` and wired into
+`~/.claude/settings.json` as a `Stop` hook and a `PreToolUse` hook for `AskUserQuestion` (existing settings are kept, a backup is made). If you are
+listening and the session has not sent `agent-radio say|play` since your last message, it blocks the stop (or the question) once and tells the agent
+to send a 1-4 sentence spoken summary first. Without consent `settings.json` is never touched.
+
 ## API reference
 
 Agent endpoints use `Authorization: Bearer ar_...` (create keys in the web UI). Errors are `{"error": "<code>", "message": "..."}`.

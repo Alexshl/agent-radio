@@ -10,6 +10,7 @@ const CLIENT_FILES: Record<string, string> = {
   'install.sh': 'text/x-shellscript; charset=utf-8',
   'agent-radio': 'text/x-shellscript; charset=utf-8',
   'SKILL.md': 'text/markdown; charset=utf-8',
+  'agent-radio-hook.sh': 'text/x-shellscript; charset=utf-8',
   'claude-md-snippet.md': 'text/markdown; charset=utf-8',
   'claude-md-snippet.en.md': 'text/markdown; charset=utf-8',
 }
