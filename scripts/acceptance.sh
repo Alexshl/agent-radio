@@ -247,7 +247,7 @@ const st = db.prepare('select s.id, s.user_id, s.source, u.learn_mode, u.learn_e
 const engine = async (path, body) => (await fetch('http://liquidsoap:8080' + path, { method: 'POST', body: JSON.stringify(body) })).ok
 const m3u = '/shared/playlists/' + st.id + '.m3u'
 if (ACTION === 'on') {
-  const tracks = db.prepare('select path from tracks order by path limit 4').all()
+  const tracks = db.prepare('select path from tracks order by path limit 3').all()
   if (tracks.length < 2) { console.log('NOTRACKS'); process.exit(0) }
   mkdirSync('/shared/playlists', { recursive: true })
   writeFileSync(m3u, tracks.map((t) => '/music/' + t.path).join('\n') + '\n')
@@ -255,7 +255,7 @@ if (ACTION === 'on') {
   db.prepare('delete from playlist_tracks where playlist_id = ?').run('acceptance-learn')
   db.prepare('delete from playlists where id = ?').run('acceptance-learn')
   db.prepare("insert into playlists (id, user_id, name, order_mode, created_at, updated_at) values ('acceptance-learn', ?, 'acceptance learn', 'shuffle', ?, ?)").run(st.user_id, now, now)
-  db.prepare('select id from tracks order by path limit 4').all().forEach((t, i) => db.prepare("insert into playlist_tracks (playlist_id, track_id, position) values ('acceptance-learn', ?, ?)").run(t.id, i))
+  db.prepare('select id from tracks order by path limit 3').all().forEach((t, i) => db.prepare("insert into playlist_tracks (playlist_id, track_id, position) values ('acceptance-learn', ?, ?)").run(t.id, i))
   db.prepare('delete from learn_plays where station_id = ?').run(st.id)
   db.prepare('update stations set source = ?, learn_bag = null, learn_counter = 0 where id = ?').run(JSON.stringify({ type: 'userplaylist', playlistId: 'acceptance-learn' }), st.id)
   db.prepare('update users set learn_mode = 1, learn_every = 1 where id = ?').run(st.user_id)

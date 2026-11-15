@@ -13,4 +13,13 @@ for i in 1 2 3; do
     -b:a 128k -metadata title="Sample tone $i" "$DIR/.new-$i.mp3"
   mv "$DIR/.new-$i.mp3" "$f"
 done
+# three short "songs" (30 s, with artist and title tags) for the learn-mode check: a queued song starts only on a track boundary,
+# so the acceptance must not wait behind a 10-minute tone ("a-" sorts them before the tones)
+for i in 1 2 3; do
+  f="$DIR/a-short-$i.mp3"
+  if [ -s "$f" ] && [ "${2:-}" != force ]; then continue; fi
+  ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=$((300 + 110 * i)):duration=30:sample_rate=44100" -af "volume=0.4" \
+    -b:a 128k -metadata artist="Sample Band" -metadata title="Short song $i" "$DIR/.new-s$i.mp3"
+  mv "$DIR/.new-s$i.mp3" "$f"
+done
 chmod a+rw "$DIR"/*.mp3 2>/dev/null || true
