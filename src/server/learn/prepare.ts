@@ -16,7 +16,7 @@ export const ERROR_RETRY_MS = 3600_000
 export const LLM_ERROR_RETRY_MS = 10 * 60_000
 const MAX_LINES = 150
 const MAX_QUOTE_WORDS = 8
-const MAX_INTRO_CHARS = 600
+const MAX_INTRO_CHARS = 900
 const LANG_NAME: Record<string, string> = {
   uk: 'Ukrainian',
   ru: 'Russian',
@@ -56,16 +56,22 @@ export function introProblem(text: string): string | null {
 }
 
 const SYSTEM = (lang: string, hasLyrics: boolean) =>
-  `You prepare a short radio introduction for a song, for a listener who likes to understand songs in other languages.
+  `You are a friendly language teacher who hosts a radio show. Before a song you prepare the listener so that, while it plays, they catch
+words and expressions of the original language and understand more of it. The listener knows the target language, not the song's language.
 Target language of everything you write: ${LANG_NAME[lang] ?? lang} (code ${lang}).
 Return JSON with the keys:
 - "original_lang": ISO 639-1 code of the language the song is sung in.
 - "summary": 2-3 sentences in the target language about what the song is about.
-- "intro_script": what a radio host says before the song, in the target language, spoken style, 2-4 sentences, at most ${MAX_INTRO_CHARS} characters. Say the artist and the title, then what the song is about emotionally in plain words (for example: it is a love song, he is suffering). ${
+- "intro_script": what you say on air before the song, in the target language, natural spoken style (it is read by a speech synthesizer:
+  no lists, no brackets, no emoji), 3-6 sentences, at most ${MAX_INTRO_CHARS} characters. Say the artist and the title, then in one plain
+  sentence what the song is about emotionally (for example: it is a love song, he is suffering because she left). ${
     hasLyrics
-      ? 'Then give 2-3 short phrases from the song in the original language (each at most 6 words, in quotes), each followed by its meaning. '
+      ? `Then, as a teacher, point out 2-3 things from the lyrics worth listening for, preferring idioms, set phrases, phrasal verbs and
+  colloquial turns over plain words: quote each in the original language (in quotes, at most 6 words), say what it literally says if that
+  differs, and what it really means here (for example: here he sings "break my heart", an idiom: to hurt someone deeply in love). Only use
+  phrases that really are in the lyrics below. `
       : 'You have no lyrics: do not quote anything and do not invent the content; only say the artist and the title and, if you are sure, one general remark. '
-  }Do not talk about learning vocabulary and do not give study advice.
+  }
 - "hooks": the original phrases you quoted in the intro (array of strings).
 - "translations": ${
     hasLyrics

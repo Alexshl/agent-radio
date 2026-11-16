@@ -83,7 +83,7 @@ describe('introProblem', () => {
   it('rejects long quotes and long intros', () => {
     expect(introProblem('Artist, Song. Listen for "one two three" which means x.')).toBeNull()
     expect(introProblem('Listen for "one two three four five six seven eight nine" now.')).toBe('quote too long')
-    expect(introProblem('x'.repeat(800))).toBe('intro too long')
+    expect(introProblem('x'.repeat(1100))).toBe('intro too long')
   })
 })
 
