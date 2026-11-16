@@ -324,9 +324,9 @@ export class LearnScheduler {
       .where(eq(stations.id, st.id))
       .run()
     let clip: string | null = null
-    // the prepared spoken intro when the notes are ready, else the plain "artist - title"
+    // an intro only with the prepared notes of a song with lyrics; no notes yet = no intro
     const notes = withIntro ? this.opts.prep?.getNotes(track.id, user.lang) : null
-    if (withIntro) clip = await this.makeIntro(user, notes?.introText || introText(track))
+    if (notes?.introText) clip = await this.makeIntro(user, notes.introText)
     if (listening) this.prefetch(user, pl, order, bag)
     const row = this.newRow(user.id, st.id, track.id, clip, 1)
     try {

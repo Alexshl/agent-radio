@@ -20,7 +20,7 @@ export const LLM_ERROR_RETRY_MS = 10 * 60_000
 const MAX_LINES = 150
 const MAX_QUOTE_WORDS = 8
 
-export type PrepareStatus = 'ready' | 'no_provider' | 'capped' | 'instrumental' | 'error'
+export type PrepareStatus = 'ready' | 'no_provider' | 'capped' | 'instrumental' | 'no_lyrics' | 'error'
 
 export interface NotesRow {
   pairs: { src: string; tr: string }[] | null
@@ -118,6 +118,8 @@ export class SongPreparer {
     if (!lyr) return 'error'
     if (lyr.status === 'instrumental') return 'instrumental'
     if (lyr.status === 'error') return 'error'
+    // no lyrics (not found): no notes and no model call; the status stays cached
+    if (lyr.status !== 'found' || !lyr.lyrics?.trim()) return 'no_lyrics'
     return this.writeNotes(trackId, lang, track, lyr)
   }
 

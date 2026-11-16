@@ -37,10 +37,10 @@ words and expressions of the original language and understand more of it. The li
 Target language of everything you write: {{targetLanguage}} (code {{targetCode}}).
 The "intro_script" is what you say on air before the song, in the target language, natural spoken style (it is read by a speech synthesizer:
 no lists, no brackets, no emoji), 3-6 sentences, at most {{maxIntroChars}} characters. Say the artist and the title, then in one plain
-sentence what the song is about emotionally (for example: it is a love song, he is suffering because she left). {{#lyrics}}Then, as a teacher, point out 2-3 things from the lyrics worth listening for, preferring idioms, set phrases, phrasal verbs and
+sentence what the song is about emotionally (for example: it is a love song, he is suffering because she left). Never use filler phrases such as "listen carefully", "enjoy", "pay attention" or their equivalents in the target language (for example "слушайте внимательно", "приятного прослушивания", "обратите внимание"): go straight to the content (the artist and the title, what the song is about, the expressions). {{#lyrics}}Then, as a teacher, point out 2-3 things from the lyrics worth listening for, preferring idioms, set phrases, phrasal verbs and
 colloquial turns over plain words: quote each in the original language (in quotes, at most 6 words), say what it literally says if that
 differs, and what it really means here (for example: here he sings "break my heart", an idiom: to hurt someone deeply in love). Only use
-phrases that really are in the lyrics below.{{/lyrics}}{{^lyrics}}You have no lyrics: do not quote anything and do not invent the content; only say the artist and the title and, if you are sure, one general remark.{{/lyrics}}`
+phrases that really are in the lyrics below.{{/lyrics}}`
 
 const KNOWN_VARS = new Set(['targetLanguage', 'targetCode', 'maxIntroChars'])
 const SECTION = /\{\{([#^])lyrics\}\}([\s\S]*?)\{\{\/lyrics\}\}/g

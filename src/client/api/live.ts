@@ -6,7 +6,7 @@ import { useMe } from './hooks'
 const KEYS: Record<string, string[]> = {
   messages: ['history', 'radio'],
   station: ['radio', 'live', 'learn-now'],
-  learn: ['learn-now', 'learn-archive', 'learn-song', 'radio'],
+  learn: ['learn-now', 'learn-archive', 'learn-song', 'radio', 'admin-learn-songs', 'admin-learn-progress'],
   live: ['live', 'learn-now'],
 }
 

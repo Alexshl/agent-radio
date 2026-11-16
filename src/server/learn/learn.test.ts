@@ -47,6 +47,11 @@ function world(t: T) {
   return { states, set, advance: (ms: number) => (now += ms), clock: () => now }
 }
 
+// notes are ready for every song: only then there is an intro
+const READY = {
+  getNotes: () => ({ pairs: null, summary: 's', introText: 'Intro from the notes', hooks: [] as string[] }),
+  ensurePrepared: async () => 'ready' as const,
+}
 const pushed = (t: T) => t.engine.pushMusic.mock.calls.map((c) => ({ path: c[1] as string, msg: c[2] as string, opts: c[3] as unknown }))
 const trackPushes = (t: T) => pushed(t).filter((p) => p.msg.endsWith('-t'))
 const introPushes = (t: T) => pushed(t).filter((p) => p.msg.endsWith('-i'))
@@ -96,7 +101,7 @@ describe('LearnScheduler', () => {
   it('queues one song ahead; the next is queued only when it reaches "playing"', async () => {
     const { t } = await ready()
     const w = world(t)
-    const s = new LearnScheduler(t.deps, { now: w.clock })
+    const s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     await s.tick()
     expect(trackPushes(t)).toHaveLength(1)
     // intro first, then the song
@@ -119,7 +124,7 @@ describe('LearnScheduler', () => {
     const { t, station } = await ready()
     t.db.update(stations).set({ voiceGainDb: 3, musicGainDb: -5 }).where(eq(stations.id, station.id)).run()
     const w = world(t)
-    await new LearnScheduler(t.deps, { now: w.clock }).tick()
+    await new LearnScheduler(t.deps, { now: w.clock, prep: READY }).tick()
     expect(trackPushes(t)[0]?.path).toMatch(/^\/music\/a\d\.mp3$/)
     expect(introPushes(t)[0]?.opts).toMatchObject({ amplifyDb: 8, title: expect.stringContaining('Artist') })
     expect(t.makeClip).toHaveBeenCalledWith(expect.objectContaining({ chime: false, lang: 'uk' }))
@@ -129,7 +134,7 @@ describe('LearnScheduler', () => {
     const { t } = await ready()
     const w = world(t)
     const listeners = { observe: async () => ({ listeners: 0 }) } as unknown as NonNullable<(typeof t.deps)['listeners']>
-    await new LearnScheduler({ ...t.deps, listeners }, { now: w.clock }).tick()
+    await new LearnScheduler({ ...t.deps, listeners }, { now: w.clock, prep: READY }).tick()
     expect(trackPushes(t)).toHaveLength(1)
     expect(introPushes(t)).toHaveLength(0)
     expect(t.makeClip).not.toHaveBeenCalled()
@@ -138,11 +143,11 @@ describe('LearnScheduler', () => {
   it('the shuffle bag survives an app restart: a round has no repeats', async () => {
     const { t } = await ready()
     const w = world(t)
-    let s = new LearnScheduler(t.deps, { now: w.clock })
+    let s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     await s.tick()
     await playThrough(t, w, s)
     // "restart": a new scheduler, the bag comes from the db
-    s = new LearnScheduler(t.deps, { now: w.clock })
+    s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     await playThrough(t, w, s)
     await playThrough(t, w, s)
     const order = rowsOf(t)
@@ -155,7 +160,7 @@ describe('LearnScheduler', () => {
   it('ordered mode follows the playlist order and wraps around', async () => {
     const { t, trackIds } = await ready({ order: 'ordered' })
     const w = world(t)
-    const s = new LearnScheduler(t.deps, { now: w.clock })
+    const s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     await s.tick()
     for (let i = 0; i < 4; i++) await playThrough(t, w, s)
     const planned = [...rowsOf(t)].sort((a, b) => a.plannedAt - b.plannedAt)
@@ -167,7 +172,7 @@ describe('LearnScheduler', () => {
   it('"every 2nd": an intro before the 1st, 3rd, ... song', async () => {
     const { t } = await ready({ every: 2 })
     const w = world(t)
-    const s = new LearnScheduler(t.deps, { now: w.clock })
+    const s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     await s.tick()
     for (let i = 0; i < 3; i++) await playThrough(t, w, s)
     expect(trackPushes(t)).toHaveLength(4)
@@ -184,7 +189,7 @@ describe('LearnScheduler', () => {
       .prepare("insert into learn_song_prefs (user_id, track_id, skip, created_at) values (?, ?, 1, '2026-01-01')")
       .run(user.id, trackIds[1])
     const w = world(t)
-    const s = new LearnScheduler(t.deps, { now: w.clock })
+    const s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     await s.tick()
     for (let i = 0; i < 3; i++) await playThrough(t, w, s)
     const rows = [...rowsOf(t)].sort((a, b) => a.plannedAt - b.plannedAt || a.id.localeCompare(b.id))
@@ -197,7 +202,7 @@ describe('LearnScheduler', () => {
     const a = await ready()
     a.t.makeClip.mockRejectedValueOnce(new Error('tts down'))
     const wa = world(a.t)
-    await new LearnScheduler(a.t.deps, { now: wa.clock }).tick()
+    await new LearnScheduler(a.t.deps, { now: wa.clock, prep: READY }).tick()
     expect(introPushes(a.t)).toHaveLength(0)
     expect(trackPushes(a.t)).toHaveLength(1)
     expect(rowsOf(a.t)[0]).toMatchObject({ introMsg: null, status: 'pushed' })
@@ -205,7 +210,7 @@ describe('LearnScheduler', () => {
     const b = await ready()
     b.t.makeClip.mockImplementationOnce(() => new Promise<string>(() => {}))
     const wb = world(b.t)
-    await new LearnScheduler(b.t.deps, { now: wb.clock, introTimeoutMs: 20 }).tick()
+    await new LearnScheduler(b.t.deps, { now: wb.clock, prep: READY, introTimeoutMs: 20 }).tick()
     expect(introPushes(b.t)).toHaveLength(0)
     expect(trackPushes(b.t)).toHaveLength(1)
 
@@ -215,7 +220,7 @@ describe('LearnScheduler', () => {
     c.t.engine.pushMusic.mockImplementationOnce(async () => {
       throw new Error('boom')
     })
-    await new LearnScheduler(c.t.deps, { now: wc.clock }).tick()
+    await new LearnScheduler(c.t.deps, { now: wc.clock, prep: READY }).tick()
     expect(trackPushes(c.t)).toHaveLength(1)
     expect(rowsOf(c.t)[0]).toMatchObject({ introMsg: null, status: 'pushed' })
   })
@@ -223,7 +228,7 @@ describe('LearnScheduler', () => {
   it('engine restart: a queued song the engine forgot is queued again (with its intro)', async () => {
     const { t } = await ready()
     const w = world(t)
-    const s = new LearnScheduler(t.deps, { now: w.clock })
+    const s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     await s.tick()
     const first = rowsOf(t)[0]
     expect(first?.status).toBe('pushed')
@@ -246,7 +251,7 @@ describe('LearnScheduler', () => {
   it('engine restart in the middle of a song: it is not repeated, the next one is queued', async () => {
     const { t } = await ready()
     const w = world(t)
-    const s = new LearnScheduler(t.deps, { now: w.clock })
+    const s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     await s.tick()
     w.set(lastTrackMsg(t), 'playing')
     await s.tick()
@@ -264,7 +269,7 @@ describe('LearnScheduler', () => {
   it('the engine is down: nothing changes; a refused push is retried on the next pass', async () => {
     const { t } = await ready()
     const w = world(t)
-    const s = new LearnScheduler(t.deps, { now: w.clock })
+    const s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     t.engine.msgStates.mockRejectedValueOnce(new Error('down'))
     await s.tick()
     expect(rowsOf(t)).toHaveLength(0)
@@ -285,7 +290,7 @@ describe('LearnScheduler', () => {
   it('learn mode off or the source no longer a playlist: the queue is flushed and nothing is queued', async () => {
     const { t, user, station } = await ready()
     const w = world(t)
-    const s = new LearnScheduler(t.deps, { now: w.clock })
+    const s = new LearnScheduler(t.deps, { now: w.clock, prep: READY })
     await s.tick()
     t.db
       .update(stations)
@@ -304,7 +309,7 @@ describe('LearnScheduler', () => {
   it('the intro is reported as on air while the engine plays it', async () => {
     const { t, station } = await ready()
     world(t)
-    const s = new LearnScheduler(t.deps)
+    const s = new LearnScheduler(t.deps, { prep: READY })
     await s.tick()
     const row = rowsOf(t)[0]
     // the engine says the intro plays
@@ -477,7 +482,7 @@ describe('delivery while an intro plays', () => {
 describe('LearnScheduler with prepared notes', () => {
   const notes = (introText: string | null) => ({ pairs: null, summary: 's', introText, hooks: [] as string[] })
 
-  it('speaks intro_script when the notes are ready and the plain "artist - title" otherwise', async () => {
+  it('speaks intro_script when the notes are ready; no notes yet = no intro at all', async () => {
     const { t } = await ready()
     const w = world(t)
     const prep = { getNotes: vi.fn(() => notes('Spoken intro from the model')), ensurePrepared: vi.fn(async () => 'ready' as const) }
@@ -489,8 +494,9 @@ describe('LearnScheduler with prepared notes', () => {
     const w2 = world(t2)
     const none = { getNotes: vi.fn(() => null), ensurePrepared: vi.fn(async () => 'error' as const) }
     await new LearnScheduler(t2.deps, { now: w2.clock, prep: none }).tick()
-    expect(t2.makeClip).toHaveBeenLastCalledWith(expect.objectContaining({ text: expect.stringContaining('Artist — ') }))
-    expect(introPushes(t2)).toHaveLength(1)
+    expect(t2.makeClip).not.toHaveBeenCalled()
+    expect(introPushes(t2)).toHaveLength(0)
+    expect(trackPushes(t2)).toHaveLength(1)
   })
 
   it('starts preparing the next candidate of the bag without advancing it', async () => {

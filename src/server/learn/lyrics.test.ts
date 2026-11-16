@@ -238,23 +238,20 @@ describe('SongPreparer', () => {
     expect(e.prep.getNotes(e.trackId, 'ru')).toBeNull()
   })
 
-  it('no lyrics found: an intro from artist and title only; retried after 30 days', async () => {
+  it('no lyrics found: no notes and no model call; the status is cached and retried after 30 days', async () => {
     const e = await prepEnv({ lrclib: 'none', notes: NOTES({ intro_script: 'Artist, Song. A song.', translations: [] }) })
-    expect(await e.prep.ensurePrepared(e.trackId, 'ru')).toBe('ready')
-    expect(e.prep.getNotes(e.trackId, 'ru')?.pairs).toBeNull()
+    expect(await e.prep.ensurePrepared(e.trackId, 'ru')).toBe('no_lyrics')
+    expect(e.prep.getNotes(e.trackId, 'ru')).toBeNull()
     expect(e.t.db.select().from(songLyrics).get()?.status).toBe('not_found')
-    const body = JSON.parse(
-      String((e.f.mock.calls.find((c) => !String(c[0]).includes('lrclib')) as unknown as [string, RequestInit])[1].body),
-    )
-    expect(body.messages[1].content).toContain('not available')
-    e.t.db.delete(songNotes).run()
-    e.advance(10 * 24 * 3600_000)
+    expect(llmCalls(e)).toBe(0)
+    const lr = () => e.f.mock.calls.filter((c) => String(c[0]).includes('lrclib.net')).length
+    const n = lr()
     await e.prep.ensurePrepared(e.trackId, 'ru')
-    expect(e.f.mock.calls.filter((c) => String(c[0]).includes('lrclib.net'))).toHaveLength(2)
-    e.t.db.delete(songNotes).run()
+    expect(lr()).toBe(n)
     e.advance(31 * 24 * 3600_000)
     await e.prep.ensurePrepared(e.trackId, 'ru')
-    expect(e.f.mock.calls.filter((c) => String(c[0]).includes('lrclib.net')).length).toBeGreaterThan(2)
+    expect(lr()).toBeGreaterThan(n)
+    expect(llmCalls(e)).toBe(0)
   })
 
   it('an LRCLIB error is retried after an hour, not before', async () => {

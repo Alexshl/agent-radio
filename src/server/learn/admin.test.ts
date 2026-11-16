@@ -55,10 +55,8 @@ describe('prompt template', () => {
         expect(s).toContain('Answer contract')
       }
     }
-    expect(buildSystem(DEFAULT_PROMPT, 'ru', false)).toContain('You have no lyrics')
     expect(buildSystem(DEFAULT_PROMPT, 'ru', false)).not.toContain('idioms')
     expect(buildSystem(DEFAULT_PROMPT, 'ru', true)).toContain('idioms')
-    expect(buildSystem(DEFAULT_PROMPT, 'ru', true)).not.toContain('You have no lyrics')
   })
 
   it('the default is valid; unknown placeholders and empty text are not', () => {
@@ -218,6 +216,25 @@ describe('songs, regenerate, delete', () => {
     expect(p).toMatchObject({ total: 2, done: 1, failed: 1, capped: true })
     expect(e.llmCalls()).toBe(7)
     expect(e.t.db.select().from(songLyrics).all()).toHaveLength(2)
+  })
+})
+
+describe('playground speak', () => {
+  it('admin only; synthesizes with the admin voice and no chime, returns audio', async () => {
+    const e = await env()
+    const r = await e.call('/playground/speak', 'POST', { text: 'Hello there', lang: 'uk' })
+    expect(r.status).toBe(200)
+    expect(r.headers.get('content-type')).toContain('audio/mpeg')
+    expect(e.t.makeClip).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'Hello there', lang: 'uk', chime: false }))
+    expect((await e.call('/playground/speak', 'POST', { text: '', lang: 'uk' })).status).toBe(400)
+    const u = await e.t.req('/api/admin/learn/playground/speak', { method: 'POST', cookie: e.userCookie, json: { text: 'x', lang: 'uk' } })
+    expect(u.status).toBe(403)
+  })
+})
+
+describe('default prompt', () => {
+  it('forbids filler phrases', () => {
+    expect(DEFAULT_PROMPT).toContain('Never use filler phrases')
   })
 })
 

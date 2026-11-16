@@ -1,5 +1,6 @@
 // Admin section "Учи язык": the intro prompt, the playground, the cache of lyrics and notes. Mounted by adminRoutes under /api/admin/learn
 // (session + admin role come from there). Lyrics are never deleted here, only notes.
+import { readFileSync, rmSync } from 'node:fs'
 import { eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -80,6 +81,30 @@ export function learnAdminRoutes(deps: FullDeps) {
         throw new HttpError(502, e.code, e.message)
       }
       throw e
+    }
+  })
+
+  // the intro text of the playground read aloud with the admin's own voice and rate (as a learn intro, no chime); returns the mp3
+  r.post('/playground/speak', async (c) => {
+    const body = z.object({ text: z.string().trim().min(1).max(3000), lang }).safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body')
+    const user = c.get('user')
+    let file: string | null = null
+    try {
+      file = await deps.tts.makeClip({
+        text: body.data.text,
+        voice: user.voice,
+        lang: body.data.lang,
+        chime: false,
+        rate: user.speechRate,
+        userId: user.id,
+      })
+      return c.body(readFileSync(file), 200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' })
+    } catch (e) {
+      console.error('playground speak failed:', e instanceof Error ? e.message : e)
+      throw new HttpError(502, 'tts_failed', 'Could not synthesize the text')
+    } finally {
+      if (file) rmSync(file, { force: true })
     }
   })
 
