@@ -23,6 +23,12 @@ export interface ControlText {
   listeners: string
   nowPlaying: string
   source: string
+  nextTitle: string
+  previousTitle: string
+  skipDone: string
+  previousDone: string
+  notSkippable: string
+  noHistory: string
 }
 
 export const CONTROL_TEXT: Record<SummaryLang, ControlText> = {
@@ -48,6 +54,12 @@ export const CONTROL_TEXT: Record<SummaryLang, ControlText> = {
     listeners: 'Слухачів',
     nowPlaying: 'Зараз грає',
     source: 'Джерело',
+    nextTitle: 'Наступний трек',
+    previousTitle: 'Попередній трек',
+    skipDone: 'Пропускаю трек',
+    previousDone: 'Вмикаю попередній трек',
+    notSkippable: 'Зараз грає не музика — пропускати нічого',
+    noHistory: 'Попереднього треку ще немає',
   },
   ru: {
     replay1: 'Повторяю последнее сообщение',
@@ -71,6 +83,12 @@ export const CONTROL_TEXT: Record<SummaryLang, ControlText> = {
     listeners: 'Слушателей',
     nowPlaying: 'Сейчас играет',
     source: 'Источник',
+    nextTitle: 'Следующий трек',
+    previousTitle: 'Предыдущий трек',
+    skipDone: 'Пропускаю трек',
+    previousDone: 'Включаю предыдущий трек',
+    notSkippable: 'Сейчас играет не музыка — пропускать нечего',
+    noHistory: 'Предыдущего трека пока нет',
   },
   en: {
     replay1: 'Replaying the last message',
@@ -94,6 +112,12 @@ export const CONTROL_TEXT: Record<SummaryLang, ControlText> = {
     listeners: 'Listeners',
     nowPlaying: 'Now playing',
     source: 'Source',
+    nextTitle: 'Next track',
+    previousTitle: 'Previous track',
+    skipDone: 'Skipping the track',
+    previousDone: 'Playing the previous track',
+    notSkippable: 'No music is playing, nothing to skip',
+    noHistory: 'There is no previous track yet',
   },
   lv: {
     replay1: 'Atkārtoju pēdējo ziņojumu',
@@ -117,6 +141,12 @@ export const CONTROL_TEXT: Record<SummaryLang, ControlText> = {
     listeners: 'Klausītāji',
     nowPlaying: 'Tagad skan',
     source: 'Avots',
+    nextTitle: 'Nākamais skaņdarbs',
+    previousTitle: 'Iepriekšējais skaņdarbs',
+    skipDone: 'Izlaižu skaņdarbu',
+    previousDone: 'Ieslēdzu iepriekšējo skaņdarbu',
+    notSkippable: 'Šobrīd nespēlē mūzika — nav ko izlaist',
+    noHistory: 'Iepriekšējā skaņdarba vēl nav',
   },
   et: {
     replay1: 'Kordan viimast sõnumit',
@@ -140,6 +170,12 @@ export const CONTROL_TEXT: Record<SummaryLang, ControlText> = {
     listeners: 'Kuulajaid',
     nowPlaying: 'Praegu mängib',
     source: 'Allikas',
+    nextTitle: 'Järgmine lugu',
+    previousTitle: 'Eelmine lugu',
+    skipDone: 'Jätan loo vahele',
+    previousDone: 'Mängin eelmist lugu',
+    notSkippable: 'Praegu muusikat ei mängi — pole midagi vahele jätta',
+    noHistory: 'Eelmist lugu veel pole',
   },
   lt: {
     replay1: 'Kartoju paskutinį pranešimą',
@@ -163,6 +199,12 @@ export const CONTROL_TEXT: Record<SummaryLang, ControlText> = {
     listeners: 'Klausytojų',
     nowPlaying: 'Dabar groja',
     source: 'Šaltinis',
+    nextTitle: 'Kitas kūrinys',
+    previousTitle: 'Ankstesnis kūrinys',
+    skipDone: 'Praleidžiu kūrinį',
+    previousDone: 'Įjungiu ankstesnį kūrinį',
+    notSkippable: 'Dabar groja ne muzika — nėra ko praleisti',
+    noHistory: 'Ankstesnio kūrinio dar nėra',
   },
   de: {
     replay1: 'Wiederhole die letzte Nachricht',
@@ -186,6 +228,12 @@ export const CONTROL_TEXT: Record<SummaryLang, ControlText> = {
     listeners: 'Hörer',
     nowPlaying: 'Läuft gerade',
     source: 'Quelle',
+    nextTitle: 'Nächster Titel',
+    previousTitle: 'Vorheriger Titel',
+    skipDone: 'Überspringe den Titel',
+    previousDone: 'Spiele den vorherigen Titel',
+    notSkippable: 'Es läuft keine Musik, nichts zu überspringen',
+    noHistory: 'Es gibt noch keinen vorherigen Titel',
   },
   sv: {
     replay1: 'Upprepar det senaste meddelandet',
@@ -209,6 +257,12 @@ export const CONTROL_TEXT: Record<SummaryLang, ControlText> = {
     listeners: 'Lyssnare',
     nowPlaying: 'Spelas nu',
     source: 'Källa',
+    nextTitle: 'Nästa låt',
+    previousTitle: 'Föregående låt',
+    skipDone: 'Hoppar över låten',
+    previousDone: 'Spelar föregående låt',
+    notSkippable: 'Ingen musik spelas, inget att hoppa över',
+    noHistory: 'Det finns ingen föregående låt än',
   },
 }
 

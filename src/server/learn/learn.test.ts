@@ -323,13 +323,16 @@ describe('LearnScheduler', () => {
 })
 
 describe('engineSpec', () => {
-  it('learn off: the same playlist spec as before; learn on: a queue source with the same list', async () => {
+  it('learn off: the queue type with nothing pushed; learn on: the same spec (the app starts queueing songs)', async () => {
     const { t, user, station } = await ready({ on: false, order: 'ordered' })
     const st = () => t.db.select().from(stations).where(eq(stations.id, station.id)).get() as typeof station
     const off = engineSpec(t.db, t.config, st())
-    expect(off).toEqual({ type: 'playlist', path: `${t.config.engineSharedDir}/playlists/${station.id}.m3u`, mode: 'normal' })
+    expect(off).toEqual({ type: 'queue', path: `${t.config.engineSharedDir}/playlists/${station.id}.m3u`, mode: 'normal' })
+    // with learn off the app pushes nothing: the queue stays empty and the list plays as a plain playlist
+    await new LearnScheduler(t.deps, { prep: READY }).tick()
+    expect(t.engine.pushMusic).not.toHaveBeenCalled()
     t.db.update(users).set({ learnMode: 1 }).where(eq(users.id, user.id)).run()
-    expect(engineSpec(t.db, t.config, st())).toEqual({ ...off, type: 'queue' })
+    expect(engineSpec(t.db, t.config, st())).toEqual(off)
     // other sources are not touched by the flag
     t.db
       .update(stations)
@@ -367,7 +370,7 @@ describe('settings and /api/app/learn', () => {
     expect(
       (await t.req('/api/app/station/source', { cookie, method: 'PUT', json: { type: 'userplaylist', playlistId: pl.id } })).status,
     ).toBe(200)
-    expect(lastSpec(t)).toMatchObject({ type: 'playlist' })
+    expect(lastSpec(t)).toMatchObject({ type: 'queue' })
     expect(await radio(t, cookie)).toMatchObject({ learn: { mode: false, available: true } })
 
     expect((await patch(t, cookie, { learnMode: true, learnEvery: 3 })).status).toBe(200)
@@ -379,7 +382,7 @@ describe('settings and /api/app/learn', () => {
 
     t.engine.flushMusic.mockClear()
     expect((await patch(t, cookie, { learnMode: false })).status).toBe(200)
-    expect(lastSpec(t)).toMatchObject({ type: 'playlist' })
+    expect(lastSpec(t)).toMatchObject({ type: 'queue' })
     expect(t.engine.flushMusic).toHaveBeenCalled()
     expect(t.db.select().from(users).get()).toMatchObject({ learnMode: 0, learnEvery: 3 })
   })

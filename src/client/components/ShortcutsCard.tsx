@@ -69,6 +69,8 @@ export function ShortcutsCard() {
       post_('r1', T.replay1, T.kinds.replay, `${base}/replay?k=${k}&count=1`),
       post_('r2', T.replay2, T.kinds.replay, `${base}/replay?k=${k}&count=2`),
       post_('r3', T.replay3, T.kinds.replay, `${base}/replay?k=${k}&count=3`),
+      post_('next', T.nextTitle, T.kinds.track, `${base}/next?k=${k}`),
+      post_('previous', T.previousTitle, T.kinds.track, `${base}/previous?k=${k}`),
       post_('silence', T.silence, T.kinds.source, src('silence')),
       post_('all', T.library, T.kinds.folder, src('all')),
       ...(radio.data?.playlists ?? []).map((p) => post_(`pl:${p.id}`, p.name, T.kinds.playlist, src('playlist', p.id))),

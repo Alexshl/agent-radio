@@ -1,5 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, ListMusic, Loader2, Music, Pause, Play, Radio as RadioIcon, RotateCcw, VolumeX } from 'lucide-react'
+import {
+  FolderOpen,
+  ListMusic,
+  Loader2,
+  Music,
+  Pause,
+  Play,
+  Radio as RadioIcon,
+  RotateCcw,
+  SkipBack,
+  SkipForward,
+  VolumeX,
+} from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { Link } from 'react-router'
@@ -63,6 +75,43 @@ function StatusPill({ live, listening }: { live?: Live; listening: boolean }) {
   )
 }
 
+// next / previous song: only for a station that plays a playlist or a folder
+const skippable = (src: Source) => src.type === 'userplaylist' || src.type === 'playlist'
+
+function SkipButtons({ r }: { r: Radio }) {
+  const fail = useErrorToast()
+  const [pending, setPending] = useState<'previous' | 'next' | null>(null)
+  const ok = skippable(r.station.source)
+  const send = useMutation({
+    mutationFn: (dir: 'previous' | 'next') => post(`/app/station/${dir}`),
+    onMutate: (dir) => setPending(dir),
+    onError: fail,
+    onSettled: () => setPending(null),
+  })
+  const btn = (dir: 'previous' | 'next', label: string, icon: ReactNode) => (
+    <button
+      type="button"
+      className="rc-rbtn"
+      disabled={send.isPending || !ok}
+      title={ok ? undefined : S.remote.skipDisabled}
+      aria-label={label}
+      onClick={() => send.mutate(dir)}
+    >
+      {pending === dir ? <Loader2 size={20} className="spin" aria-hidden="true" /> : icon}
+      <span>{label}</span>
+    </button>
+  )
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="rc-skip">
+        {btn('previous', S.remote.prevTrack, <SkipBack size={20} aria-hidden="true" />)}
+        {btn('next', S.remote.nextTrack, <SkipForward size={20} aria-hidden="true" />)}
+      </div>
+      {!ok && <div className="muted rc-now-hint">{S.remote.skipDisabled}</div>}
+    </div>
+  )
+}
+
 function NowCard({ r, live }: { r: Radio; live?: Live }) {
   const player = usePlayer()
   const listening = player.isPlaying(LIVE_KEY)
@@ -112,6 +161,7 @@ function NowCard({ r, live }: { r: Radio; live?: Live }) {
           )}
         </div>
       </div>
+      <SkipButtons r={r} />
       <div className="stack rc-levels" style={{ gap: 12 }}>
         <LevelSlider
           id="rc-music-gain"

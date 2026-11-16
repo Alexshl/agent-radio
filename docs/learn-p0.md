@@ -19,3 +19,11 @@ Language gotchas hit while writing the real script (2.4.6):
 The existing `playlist` branch now calls the same helper (same behaviour).
 
 Not verified here: the loudness of an intro against real clips (the app passes `amplify_db = voice gain - music gain` so that the intro sounds at the level of a spoken message); the gap-free behaviour on a real stream is covered by the learn section of `scripts/acceptance.sh`.
+
+## Next / previous song (checked in a throwaway `savonet/liquidsoap:v2.4.6` container, `radio.liq` with `output.dummy` instead of icecast)
+
+- Folder and own playlists now always use the `queue` source type (`fallback(track_sensitive=true, [queue, playlist])`); with an empty queue it plays exactly like the plain playlist.
+- `fallback(...).skip()` ends the current music track at once; the next queued request or the next playlist track starts. Voice and uploaded-file queues are separate sources and are not touched. A skipped queued song gets msg state `done` (with its times), so the learn scheduler treats it as finished.
+- History: `music.on_track` records metadata `filename`; entries whose `msg_id` matches `learn-*-i` (intros) are left out; the last 20 are kept, the last one is the playing track.
+- Previous: the file before the last history entry is pushed with `push.uri` and moved to the head of the queue (`set_queue([new, ...old])`), so it plays before a learn song and its intro that are already queued. The skip is delayed by 1 s: the queue prepares its head in the background, and right after `set_queue` the already prepared next playlist track would win (verified: without the delay the wrong track played). Both the current and the previous entry leave the history (the previous one is recorded again when it starts), so pressing it again goes further back. Building the request with `request.create` + `set_queue` did not work (the request was never played); `push.uri` does.
+- Skipping while an intro plays ends only the intro; the song then starts.

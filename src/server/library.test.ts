@@ -198,7 +198,7 @@ describe('playlists', () => {
     const res = await t.req('/api/app/station/source', { cookie: a, method: 'PUT', json: { type: 'userplaylist', playlistId: pl.id } })
     expect(res.status).toBe(200)
     const call = t.engine.setSource.mock.calls.at(-1) as unknown as [string, { type: string; path: string; mode: string }]
-    expect(call[1]).toMatchObject({ type: 'playlist', mode: 'normal' })
+    expect(call[1]).toMatchObject({ type: 'queue', mode: 'normal' })
     const { readFileSync } = await import('node:fs')
     const m3u = readFileSync(join(t.config.sharedDir, 'playlists', `${call[0]}.m3u`), 'utf8')
       .trim()

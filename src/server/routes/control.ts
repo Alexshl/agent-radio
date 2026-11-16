@@ -10,6 +10,7 @@ import { HttpError } from '../lib/http'
 import { sha256Hex } from '../lib/ids'
 import { listPlaylists } from '../playlists'
 import { replayBody, replayMessages } from '../replay'
+import { skipNext, skipPrevious } from '../skip'
 import { changeSource } from '../source'
 import { type StationSource, parseSource, stationOfUser, userById } from '../stations'
 import type { users } from '../db/schema'
@@ -18,7 +19,7 @@ type UserRow = typeof users.$inferSelect
 type Env = { Variables: { cuser: UserRow } }
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-const text = (c: Context, body: string, status: 200 | 400 | 401 | 404 | 429 | 500 | 502 | 503 = 200) => c.text(body, status, NO_STORE)
+const text = (c: Context, body: string, status: 200 | 400 | 401 | 404 | 409 | 429 | 500 | 502 | 503 = 200) => c.text(body, status, NO_STORE)
 
 export const CONTROL_KINDS = ['silence', 'playlist', 'folder', 'station', 'all'] as const
 type Kind = (typeof CONTROL_KINDS)[number]
@@ -50,6 +51,8 @@ export function controlRoutes(deps: FullDeps) {
     if (!(e instanceof HttpError)) throw e
     if (e.status === 429) return c.text(t.rateLimited, 429, { ...NO_STORE, ...e.headers })
     if (e.code === 'engine_unavailable') return text(c, t.engineDown, 503)
+    if (e.code === 'not_skippable') return text(c, t.notSkippable, 409)
+    if (e.code === 'no_history') return text(c, t.noHistory, 409)
     if (e.status === 404) return text(c, t.nothingToReplay, 404)
     return text(c, t.failed, e.status >= 500 ? 502 : 400)
   }
@@ -77,6 +80,28 @@ export function controlRoutes(deps: FullDeps) {
       if (res.status === 'skipped') return text(c, t.replaySkipped)
       if (res.status === 'waiting') return text(c, t.replayWaiting)
       return text(c, res.ids.length === 1 ? t.replay1 : t.replayN(res.ids.length))
+    } catch (e) {
+      return failure(c, t, e)
+    }
+  })
+
+  r.post('/next', async (c) => {
+    const user = c.get('cuser')
+    const t = controlText(user.lang)
+    try {
+      await skipNext(deps, stationOf(user))
+      return text(c, t.skipDone)
+    } catch (e) {
+      return failure(c, t, e)
+    }
+  })
+
+  r.post('/previous', async (c) => {
+    const user = c.get('cuser')
+    const t = controlText(user.lang)
+    try {
+      await skipPrevious(deps, stationOf(user))
+      return text(c, t.previousDone)
     } catch (e) {
       return failure(c, t, e)
     }
@@ -141,6 +166,8 @@ export function controlRoutes(deps: FullDeps) {
       { title: t.replay1, url: `${base}/replay?k=${k}&count=1`, method: 'POST' },
       { title: t.replayN(2), url: `${base}/replay?k=${k}&count=2`, method: 'POST' },
       { title: t.replayN(3), url: `${base}/replay?k=${k}&count=3`, method: 'POST' },
+      { title: t.nextTitle, url: `${base}/next?k=${k}`, method: 'POST' },
+      { title: t.previousTitle, url: `${base}/previous?k=${k}`, method: 'POST' },
       { title: t.silence, url: source('silence'), method: 'POST' },
       { title: t.library, url: source('all'), method: 'POST' },
       ...listPlaylists(db, user.id).map((p) => ({ title: p.name, url: source('playlist', p.id), method: 'POST' as const })),
