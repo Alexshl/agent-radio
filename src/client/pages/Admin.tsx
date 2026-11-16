@@ -482,6 +482,12 @@ interface LlmData {
   providers: { id: string; label: string; hasKey: boolean; configured: boolean }[]
 }
 
+// what a provider starts with when the admin switches to it (they can pick another one from the list)
+const LLM_DEFAULT_MODEL: Record<string, string> = {
+  anthropic: 'claude-haiku-5-5',
+  local: 'gemma4-e4b',
+}
+
 function LlmTab() {
   const qc = useQueryClient()
   const toast = useToast()
@@ -533,6 +539,9 @@ function LlmTab() {
   if (q.isError || !q.data) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />
   const cur = q.data.providers.find((p) => p.id === provider)
   const isLocal = provider === 'local'
+  // a select of the provider's models; the current one stays listed even when the provider does not report it
+  const listed = models.data?.models ?? []
+  const modelOptions = listed.length && model && !listed.includes(model) ? [model, ...listed] : listed
   return (
     <div className="ar-two">
       <section className="card">
@@ -550,7 +559,17 @@ function LlmTab() {
           </div>
           <div className="field">
             <label htmlFor="llm-provider">{S.admin.llm.provider}</label>
-            <select id="llm-provider" className="inp" value={provider} onChange={(e) => setProvider(e.target.value)}>
+            <select
+              id="llm-provider"
+              className="inp"
+              value={provider}
+              onChange={(e) => {
+                const v = e.target.value
+                setProvider(v)
+                // the saved model belongs to the saved provider; another provider starts from its own default
+                setModel(v === q.data?.provider ? (q.data?.model ?? '') : (LLM_DEFAULT_MODEL[v] ?? ''))
+              }}
+            >
               {q.data.providers.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
@@ -588,12 +607,18 @@ function LlmTab() {
           </div>
           <div className="field">
             <label htmlFor="llm-model">{S.admin.llm.model}</label>
-            <input id="llm-model" className="inp mono" list="llm-models" value={model} onChange={(e) => setModel(e.target.value)} />
-            <datalist id="llm-models">
-              {(models.data?.models ?? []).map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
+            {modelOptions.length > 0 ? (
+              <select id="llm-model" className="inp mono" value={model} onChange={(e) => setModel(e.target.value)}>
+                {!model && <option value="">—</option>}
+                {modelOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input id="llm-model" className="inp mono" value={model} onChange={(e) => setModel(e.target.value)} />
+            )}
             <span className="msg muted">{S.admin.llm.modelHint}</span>
           </div>
           <div className="field">
