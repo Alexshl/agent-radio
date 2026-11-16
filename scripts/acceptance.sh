@@ -257,6 +257,12 @@ if (ACTION === 'on') {
   db.prepare("insert into playlists (id, user_id, name, order_mode, created_at, updated_at) values ('acceptance-learn', ?, 'acceptance learn', 'shuffle', ?, ?)").run(st.user_id, now, now)
   db.prepare('select id from tracks order by path limit 3').all().forEach((t, i) => db.prepare("insert into playlist_tracks (playlist_id, track_id, position) values ('acceptance-learn', ?, ?)").run(t.id, i))
   db.prepare('delete from learn_plays where station_id = ?').run(st.id)
+  // an intro is spoken only from prepared notes: give the test songs lyrics and notes in the user's language (no model call)
+  const lang = db.prepare('select lang from users where id = ?').get(st.user_id).lang
+  for (const t of db.prepare('select id from tracks order by path limit 3').all()) {
+    db.prepare("insert or replace into song_lyrics (track_id, lyrics, synced, lang, source, status, fetched_at) values (?, 'la la la', null, 'en', 'lrclib', 'found', ?)").run(t.id, now)
+    db.prepare("insert or replace into song_notes (track_id, lang, pairs, summary, intro_text, hooks, model, tokens_in, tokens_out, created_at) values (?, ?, null, 'test', 'Тестове вступ перед піснею.', '[]', 'acceptance', 0, 0, ?)").run(t.id, lang, now)
+  }
   db.prepare('update stations set source = ?, learn_bag = null, learn_counter = 0 where id = ?').run(JSON.stringify({ type: 'userplaylist', playlistId: 'acceptance-learn' }), st.id)
   db.prepare('update users set learn_mode = 1, learn_every = 1 where id = ?').run(st.user_id)
   // the app queues the first song within ~5 s; the queue source takes it over right away
