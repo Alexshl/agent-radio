@@ -28,6 +28,27 @@ banner() { printf '\n###########################################################
 [ -z "$MODE" ] && die 'usage: scripts/deploy.sh staging | prod [--allow-listener-drop] [--smoke-say] [--dry-run] | rollback'
 mkdir -p "$STATE"
 
+# Where the stacks run. Without <main checkout>/.deploy/target: the local Docker, ports on 127.0.0.1. With it (git-ignored, local):
+#   DOCKER_HOST=ssh://user@host     every docker / compose call of this script goes to that host (images are built there)
+#   TARGET_ADDR=host                the address the stacks publish their ports on (health checks, acceptance, smoke)
+# The compose file bind-mounts liquidsoap/ and deploy/ from the checkout, and staging its music folder: on a remote Docker those paths are read
+# on the remote host, so they are mirrored there at the same absolute paths before every deploy (remote_sync).
+if [ -f "$STATE/target" ]; then
+  # shellcheck disable=SC1091
+  . "$STATE/target"
+  export DOCKER_HOST
+fi
+HOSTADDR=${TARGET_ADDR:-127.0.0.1}
+remote_ssh() { ssh -o BatchMode=yes -o ConnectTimeout=10 "${DOCKER_HOST#ssh://}" "$@"; }
+remote_sync() { # <dir>...: mirror these local folders to the same path on the Docker host (no-op for the local Docker)
+  case "${DOCKER_HOST:-}" in ssh://*) ;; *) return 0 ;; esac
+  local d
+  for d in "$@"; do
+    remote_ssh "mkdir -p '$d'"
+    rsync -a --delete -e 'ssh -o BatchMode=yes -o ConnectTimeout=10' "$d/" "${DOCKER_HOST#ssh://}:$d/"
+  done
+}
+
 SHA=$(git -C "$HERE" rev-parse HEAD)
 dirty() { [ -n "$(git -C "$HERE" status --porcelain)" ]; }
 
@@ -62,8 +83,8 @@ wait_http() { # <url> <seconds> <label>
 
 wait_healthy() { # app + front + engine stations all in place
   say "waiting for the stack to be healthy ..."
-  wait_http "http://127.0.0.1:$PORT/__front/healthz" 120 'the front'
-  wait_http "http://127.0.0.1:$PORT/healthz" 180 'the app'
+  wait_http "http://$HOSTADDR:$PORT/__front/healthz" 120 'the front'
+  wait_http "http://$HOSTADDR:$PORT/healthz" 180 'the app'
   local end=$((SECONDS + 120))
   until app_node "const r = await fetch('http://127.0.0.1:' + (process.env.PORT ?? 8790) + '/internal/health'); process.exit(r.ok ? 0 : 1)" 2>/dev/null; do
     [ $SECONDS -ge $end ] && die 'the engine did not get all stations within 120 s'
@@ -77,7 +98,7 @@ stream_url() { # a listen URL of the first station, read from the stack's own da
 import Database from 'better-sqlite3'
 const db = new Database((process.env.DATA_DIR ?? '/data') + '/radio.db', { readonly: true })
 const s = db.prepare('select id, listen_token as t from stations limit 1').get()
-if (s) console.log('http://127.0.0.1:${PORT}/stream/' + s.id + '.mp3?k=' + s.t)
+if (s) console.log('http://${HOSTADDR}:${PORT}/stream/' + s.id + '.mp3?k=' + s.t)
 "
 }
 
@@ -121,7 +142,7 @@ staging_music() {
 
 staging_key() { # the API key of the staging admin (created once, kept in .deploy)
   local keyfile="$STATE/staging-api-key"
-  if [ -s "$keyfile" ] && AGENT_RADIO_URL="http://127.0.0.1:$PORT" AGENT_RADIO_KEY=$(cat "$keyfile") "$HERE/client/agent-radio" status 2>/dev/null | grep -q '^agent-radio: online'; then
+  if [ -s "$keyfile" ] && AGENT_RADIO_URL="http://$HOSTADDR:$PORT" AGENT_RADIO_KEY=$(cat "$keyfile") "$HERE/client/agent-radio" status 2>/dev/null | grep -q '^agent-radio: online'; then
     return
   fi
   say "creating the staging API key ..."
@@ -134,6 +155,7 @@ deploy_staging() {
   banner "STAGING  $(git -C "$HERE" rev-parse --short HEAD)  ($HERE)"
   staging_env
   staging_music
+  remote_sync "$HERE/liquidsoap" "$HERE/deploy" "$(sed -n 's/^MUSIC_DIR=//p' "$ENV_FILE")"
   dc config --quiet
   dc up -d --build --remove-orphans
   # bind-mounted config files do not change a container's compose hash: apply them the way prod does (liquidsoap restart, graceful caddy reload)
@@ -152,13 +174,13 @@ deploy_staging() {
   staging_key
   # a station with some music (silence otherwise), best effort
   curl -fsS -m 10 -X PUT -H "Authorization: Bearer $(cat "$STATE/staging-api-key")" -H 'Content-Type: application/json' \
-    -d '{"type":"playlist","dir":"sample"}' "http://127.0.0.1:$PORT/api/station/source" >/dev/null 2>&1 || say '(sample playlist not set; the station plays silence)'
+    -d '{"type":"playlist","dir":"sample"}' "http://$HOSTADDR:$PORT/api/station/source" >/dev/null 2>&1 || say '(sample playlist not set; the station plays silence)'
 
   local log="$STATE/acceptance-$(git -C "$HERE" rev-parse --short HEAD).log"
   say "running the acceptance test (log: $log) ..."
   set +e
   ACCEPT_COMPOSE="docker compose -p $PROJECT --env-file $ENV_FILE -f $HERE/compose.yaml" ACCEPT_PROJECT=$PROJECT \
-    "$HERE/scripts/acceptance.sh" "http://127.0.0.1:$PORT" "$(cat "$STATE/staging-api-key")" 2>&1 | tee "$log"
+    "$HERE/scripts/acceptance.sh" "http://$HOSTADDR:$PORT" "$(cat "$STATE/staging-api-key")" 2>&1 | tee "$log"
   local rc=${PIPESTATUS[0]}
   set -e
   if [ "$rc" -ne 0 ]; then
@@ -211,6 +233,7 @@ deploy_prod() {
   [ -f "$STATE/passed-$SHA" ] || die "no staging stamp for $SHA: run scripts/deploy.sh staging on this commit first"
 
   banner "PRODUCTION  $(git -C "$HERE" rev-parse --short HEAD)"
+  remote_sync "$HERE/liquidsoap" "$HERE/deploy"
   dc config --quiet
   # ---- plan: which services restart
   local drop=() reload_front=0 svc
