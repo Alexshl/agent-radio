@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
+import { post } from '../api/client'
 import { S } from '../i18n'
 import { diagRecord, resumeOnActiveEnabled, startDiag } from '../lib/diag'
 import { getPlayerId, PlayerController, type PlayerSource, type PlayerState } from '../lib/player-controller'
@@ -155,10 +156,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     set('pause', () => c()?.userPause())
     set('stop', () => c()?.stop())
     if (cur.kind === 'live') {
+      // the lock screen buttons switch the song of the radio itself (a station without a playlist answers 409: nothing happens)
+      set('previoustrack', () => void post('/app/station/previous').catch(() => {}))
+      set('nexttrack', () => void post('/app/station/next').catch(() => {}))
       set('seekto', null)
       set('seekbackward', null)
       set('seekforward', null)
     } else {
+      set('previoustrack', null)
+      set('nexttrack', null)
       set('seekto', (d) => d.seekTime != null && c()?.seek(d.seekTime))
       set('seekbackward', () => c()?.seek((c()?.getState().position ?? 0) - 10))
       set('seekforward', () => c()?.seek((c()?.getState().position ?? 0) + 10))

@@ -24,6 +24,7 @@ import { learnArchive, learnNow, learnSong } from '../learn/view'
 import { replayBody, replayMessages } from '../replay'
 import { emitLive, liveBus } from '../live'
 import { airMessage, notReplay, spokenText } from '../say'
+import { skipNext, skipPrevious } from '../skip'
 import { changeSource } from '../source'
 import { createPron, deletePron, listPron, pronBody, pronPatch, pronView, updatePron } from '../tts/pronunciation-store'
 import { assertMayUpload, assertQuota, INCOMING_DIR, ingestFile, UPLOAD_EXT, UPLOAD_MAX_MB, uploadPolicy } from '../uploads'
@@ -195,6 +196,17 @@ export function appRoutes(deps: FullDeps) {
     if (!parsed.success) throw badRequest('invalid_body', 'Invalid source')
     await changeSource(deps, user, stationOf(user.id), parsed.data)
     return c.json({ ok: true, source: parsed.data })
+  })
+
+  // next / previous song of the music source (409 not_skippable for a relay or silence, 409 no_history)
+  r.post('/station/next', async (c) => {
+    await skipNext(deps, stationOf(c.get('user').id))
+    return c.json({ ok: true })
+  })
+
+  r.post('/station/previous', async (c) => {
+    await skipPrevious(deps, stationOf(c.get('user').id))
+    return c.json({ ok: true })
   })
 
   // "Проверить ссылку": ok / blocked / down only (no timing). Same address checks and the same "own URLs" rule as setting the source.

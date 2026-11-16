@@ -10,6 +10,10 @@
 #                              plays only when the queue is empty; the switch happens on track boundaries)
 #   POST /music/push           {"id": "...", "path": "/music/x.mp3", "msg": "<id>", "title": "..."?, "amplify_db": -6.0?}   (a song or a spoken intro for the queue source)
 #   POST /music/flush          {"id": "..."}   (drops what is queued, not what is playing)
+#   POST /music/skip           {"id": "..."}   (ends the music track that plays now; voice clips and uploaded tracks are not touched)
+#   POST /music/previous       {"id": "..."}   (plays the previous music file again, now: it goes to the front of the music queue and the current track is skipped;
+#                              {"ok":true,"done":false} when there is no history)
+#   GET  /music/history?id=... {"files": ["/music/a.mp3", ...]}   (the last 20 music files that started, oldest first; the last one is the current track; intros excluded)
 #   GET  /music/queue?id=...   {"length": n}   (queued, not yet playing)
 #   POST /voice/push           {"id": "...", "path": "/clips/x.mp3", "msg": "<message id>"?}   (spoken message: music ducked)
 #   POST /track/push           {"id": "...", "path": "/clips/x.mp3", "msg": "<message id>"?}   (uploaded file: music muted, voice messages wait for it)
@@ -93,18 +97,23 @@ def playlist_source(spec) =
   mksafe(playlist(mode=(if (spec.mode ?? "") == "normal" then "normal" else "randomize" end), reload_mode="watch", spec.path ?? ""))
 end
 
-def music_source(spec, music_q) =
+# skip_reg receives the function that ends the current music track (the fallback of the "queue" / the playlist)
+def music_source(spec, music_q, skip_reg) =
   t = spec.type
   if t == "relay" then
     # input.http runs on its own (network) clock: buffer() decouples it from the station clock;
     # mksafe falls back to silence whenever the relay is down, input.http reconnects by itself (poll_delay)
     mksafe(buffer(buffer=3.0, max=12.0, input.http(poll_delay=5.0, user_agent=relay_user_agent, spec.url ?? "")))
   elsif t == "playlist" then
-    playlist_source(spec)
+    pl = playlist_source(spec)
+    skip_reg(fun () -> pl.skip())
+    pl
   elsif t == "queue" then
     # the app queues the songs (learn mode); while the queue is empty the playlist plays, switching only on track boundaries
     pl = playlist_source(spec)
-    mksafe(fallback(track_sensitive=true, transition_length=0., [music_q, (pl : source)]))
+    sel = fallback(track_sensitive=true, transition_length=0., [music_q, (pl : source)])
+    skip_reg(fun () -> sel.skip())
+    mksafe(sel)
   else
     blank()
   end
@@ -131,9 +140,52 @@ def add_station(id, duck_db, music_db, voice_db, track_db) =
   def music_push(uri) = music_q.push.uri(uri) end
   def music_flush() = music_q.set_queue([]) end
   def music_length() = music_q.length() end
+  # the front of the queue: "previous" plays before what the app has queued ahead (a learn song and its intro)
+  # (the new request is appended by push.uri, which also prepares it; then the list is reordered)
+  def music_push_front(uri) =
+    old = music_q.queue()
+    music_q.push.uri(uri)
+    all = music_q.queue()
+    if list.length(old) > 0 and list.length(all) == list.length(old) + 1 then
+      music_q.set_queue([list.nth(all, list.length(old)), ...old])
+    end
+  end
   music_q.on_metadata(synchronous=false, clip_watcher())
   source.on_end(id="music_end_#{id}", delay=0., music_q, clip_ended)
   music_qa = amplify(1.0, music_q)
+  # skip / previous: the source type registers how to end the current music track
+  skip_fn = ref(fun () -> ())
+  def skip_reg(f) = skip_fn := f end
+  def music_skip() =
+    f = skip_fn()
+    f()
+  end
+  # the last 20 music files that started (oldest first, the last is the current one); intros ("learn-...-i") are not music
+  history = ref([])
+  music.on_track(synchronous=false, fun (m) -> begin
+    f = m["filename"]
+    mid = m["msg_id"]
+    if f != "" and not (string.match(pattern="^learn-.*-i$", mid)) then
+      all = [...history(), f]
+      n = list.length(all)
+      history := (n > 20 ? list.tl(all) : all)
+    end
+  end)
+  def music_previous() =
+    h = history()
+    n = list.length(h)
+    if n < 2 then
+      false
+    else
+      # the previous file starts and is recorded again, so both the current and the previous one leave the list now
+      prev = list.nth(h, n - 2)
+      history := list.rev(list.tl(list.tl(list.rev(h))))
+      music_push_front(prev)
+      # the queue prepares its head in the background: skip only when it is ready, or the next track of the playlist wins
+      thread.run(delay=1., music_skip)
+      true
+    end
+  end
   # uploaded files: while one is queued/playing it replaces the whole bed (music muted, not ducked);
   # a voice message that arrives meanwhile stays in its queue (the bed is not pulled) and plays right after the file
   track_q = request.queue(id="track_#{id}", interactive=false)
@@ -168,7 +220,7 @@ def add_station(id, duck_db, music_db, voice_db, track_db) =
     host=icecast_host, port=icecast_port, password=icecast_password,
     mount="/#{id}", name="agent-radio #{id}", mksafe(limited))
   def set_source(spec) =
-    pending := music.prepare(music_source(spec, music_qa))
+    pending := music.prepare(music_source(spec, music_qa, skip_reg))
   end
   def set_levels(m, v, t) =
     music_gain := m ?? music_gain()
@@ -178,7 +230,7 @@ def add_station(id, duck_db, music_db, voice_db, track_db) =
   def levels() =
     {music_db=music_gain(), voice_db=voice_gain(), track_db=track_gain()}
   end
-  {set_source=set_source, voice=voice_q, music_push=music_push, music_flush=music_flush, music_length=music_length, track=track_q, duck=duck, set_levels=set_levels, levels=levels, out=out}
+  {set_source=set_source, voice=voice_q, music_push=music_push, music_flush=music_flush, music_length=music_length, music_skip=music_skip, music_previous=music_previous, history=history, track=track_q, duck=duck, set_levels=set_levels, levels=levels, out=out}
 end
 
 def reply(resp, status, data) =
@@ -264,6 +316,35 @@ harbor.http.register(port=control_port, method="POST", "/music/flush", handler(f
     reply(resp, 404, {ok=false, error="unknown station"})
   end
 end))
+
+harbor.http.register(port=control_port, method="POST", "/music/skip", handler(fun (x, resp) -> begin
+  if list.assoc.mem(x.id, stations()) then
+    s = list.assoc(x.id, stations())
+    s.music_skip()
+    reply(resp, 200, {ok=true})
+  else
+    reply(resp, 404, {ok=false, error="unknown station"})
+  end
+end))
+
+harbor.http.register(port=control_port, method="POST", "/music/previous", handler(fun (x, resp) -> begin
+  if list.assoc.mem(x.id, stations()) then
+    s = list.assoc(x.id, stations())
+    reply(resp, 200, {ok=true, error="", done=s.music_previous()})
+  else
+    reply(resp, 404, {ok=false, error="unknown station", done=false})
+  end
+end))
+
+harbor.http.register(port=control_port, method="GET", "/music/history", fun (req, resp) -> begin
+  id = req.query["id"]
+  if list.assoc.mem(id, stations()) then
+    s = list.assoc(id, stations())
+    reply(resp, 200, {ok=true, error="", files=s.history()})
+  else
+    reply(resp, 404, {ok=false, error="unknown station", files=[]})
+  end
+end)
 
 harbor.http.register(port=control_port, method="GET", "/music/queue", fun (req, resp) -> begin
   id = req.query["id"]

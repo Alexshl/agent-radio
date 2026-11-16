@@ -112,13 +112,13 @@ export function stationById(db: Db, id: string): StationRow | undefined {
   return db.select().from(stations).where(eq(stations.id, id)).get()
 }
 
-// What the engine plays for a station; writes the .m3u for playlist sources.
+// What the engine plays for a station; writes the .m3u for playlist sources (folder and own playlists are always the "queue" type).
 export function engineSpec(db: Db, config: Config, st: StationRow): EngineSourceSpec {
   const src = parseSource(st.source)
   // the engine has no internet access: it pulls the stream through the app's relay listener (SSRF-safe fetch)
   if (src.type === 'relay') return { type: 'relay', url: relayUrlFor(config, src.url) }
   if (src.type === 'playlist')
-    return { type: 'playlist', path: writePlaylist(config, st.id, src.dir), mode: src.order === 'ordered' ? 'normal' : 'randomize' }
+    return { type: 'queue', path: writePlaylist(config, st.id, src.dir), mode: src.order === 'ordered' ? 'normal' : 'randomize' }
   if (src.type === 'userplaylist') {
     const pl = getPlaylist(db, st.userId, src.playlistId)
     const path = writeTrackList(
@@ -127,9 +127,8 @@ export function engineSpec(db: Db, config: Config, st: StationRow): EngineSource
       pl.tracks.map((t) => t.path),
     )
     const mode = pl.orderMode === 'ordered' ? 'normal' : 'randomize'
-    // learn mode: the app queues the songs itself, the same list plays when the queue is empty
-    if (userById(db, st.userId)?.learnMode) return { type: 'queue', path, mode }
-    return { type: 'playlist', path, mode }
+    // always the queue type: learn mode queues the songs in it and "previous" pushes the earlier file into it; with an empty queue the list plays as is
+    return { type: 'queue', path, mode }
   }
   return { type: 'silence' }
 }

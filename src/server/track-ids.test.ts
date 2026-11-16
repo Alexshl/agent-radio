@@ -55,7 +55,7 @@ describe('folder as a station source', () => {
     const { t, cookie } = await lib()
     const put = await t.req('/api/app/station/source', { method: 'PUT', cookie, json: { type: 'playlist', dir: 'rock', order: 'ordered' } })
     expect(put.status).toBe(200)
-    expect(t.engine.setSource).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ type: 'playlist', mode: 'normal' }))
+    expect(t.engine.setSource).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ type: 'queue', mode: 'normal' }))
     const calls = t.engine.setSource.mock.calls as unknown as [string, { path: string }][]
     const spec = calls[calls.length - 1]?.[1] ?? { path: '' }
     const file = join(t.config.sharedDir, 'playlists', spec.path.split('/').pop() ?? '')

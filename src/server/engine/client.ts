@@ -2,7 +2,7 @@
 export type EngineSourceSpec =
   | { type: 'relay'; url: string }
   | { type: 'playlist'; path: string; mode?: 'randomize' | 'normal' }
-  // learn mode: songs queued by the app (pushMusic) go first, the playlist plays only while the queue is empty
+  // songs queued by the app (learn mode, "previous") go first, the playlist plays only while the queue is empty
   | { type: 'queue'; path: string; mode?: 'randomize' | 'normal' }
   | { type: 'silence' }
 
@@ -33,6 +33,12 @@ export interface EngineApi {
   pushMusic(id: string, path: string, msgId: string, opts?: { title?: string; amplifyDb?: number }): Promise<void>
   // drops what is queued (not what is playing)
   flushMusic(id: string): Promise<void>
+  // ends the music track that plays now (voice clips and uploaded files are not touched); the next queued / playlist song starts
+  skipMusic(id: string): Promise<void>
+  // plays the previous music file again, now; false = no history. Pressing it again goes further back.
+  previousMusic(id: string): Promise<boolean>
+  // the last music files that started (engine paths, oldest first, the last one is playing now; intros excluded)
+  musicHistory(id: string): Promise<string[]>
   // how many requests wait in the music queue
   musicQueue(id: string): Promise<number>
   setDuck(id: string, duckDb: number): Promise<void>
@@ -97,6 +103,18 @@ export class EngineClient implements EngineApi {
 
   async flushMusic(id: string): Promise<void> {
     await this.call('POST', '/music/flush', { id })
+  }
+
+  async skipMusic(id: string): Promise<void> {
+    await this.call('POST', '/music/skip', { id })
+  }
+
+  async previousMusic(id: string): Promise<boolean> {
+    return (await this.call<{ done: boolean }>('POST', '/music/previous', { id })).done
+  }
+
+  async musicHistory(id: string): Promise<string[]> {
+    return (await this.call<{ files: string[] }>('GET', `/music/history?id=${encodeURIComponent(id)}`)).files
   }
 
   async musicQueue(id: string): Promise<number> {

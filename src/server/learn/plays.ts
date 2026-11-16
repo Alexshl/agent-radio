@@ -76,7 +76,7 @@ export function closeOpenPlays(db: Db, stationId: string, now = Date.now()) {
   if (owner) emitLive(owner.userId, 'learn')
 }
 
-// Switches learn mode of a user and re-applies the station source (the engine plays "queue" instead of "playlist" and back).
+// Switches learn mode of a user and re-applies the station source (the spec is the same "queue" one either way; the engine restarts the list, the app starts or stops queueing).
 // Off also empties the music queue. Throws when the engine refuses (the caller reverts).
 export async function applyLearnMode(deps: Pick<FullDeps, 'db' | 'config' | 'engine'>, st: typeof stations.$inferSelect, on: boolean) {
   const { db, config, engine } = deps
