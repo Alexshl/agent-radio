@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { Loader2, Mic, Music, Pause, Play, Radio, Square, Volume1, Volume2, VolumeX } from 'lucide-react'
 import { Link } from 'react-router'
 import { get } from '../api/client'
@@ -25,6 +26,26 @@ export function PlayerBar() {
     enabled: live,
     staleTime: 2000,
   })
+  // the song of the moment as the tab title and on the lock screen ("Мій ефір · <source>" moves to the second line there)
+  const song = live ? cleanIcy(liveQ.data?.title) : ''
+  const sourceName = radio.data ? sourceInfo(radio.data).name : ''
+  useEffect(() => {
+    if (!live || !song) return
+    const before = document.title
+    document.title = `${song} · ${S.appName}`
+    if ('mediaSession' in navigator && navigator.mediaSession.metadata) {
+      const m = navigator.mediaSession.metadata
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: song,
+        artist: S.player.liveTitle(sourceName),
+        album: S.appName,
+        artwork: [...m.artwork],
+      })
+    }
+    return () => {
+      document.title = before
+    }
+  }, [live, song, sourceName])
   if (!cur) return null
 
   const Icon = ICON[cur.kind]
@@ -113,4 +134,9 @@ export function PlayerBar() {
       </div>
     </section>
   )
+}
+
+// the ICY title without the lag marker the engine appends ("Song [14:32]")
+export function cleanIcy(t: string | null | undefined): string {
+  return (t ?? '').replace(/\s*\[\d\d:\d\d\]$/, '').trim()
 }
