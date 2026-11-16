@@ -10,6 +10,7 @@ import { learnPlays, stations, users } from '../db/schema'
 import type { FullDeps } from '../deps'
 import type { EngineMsgState } from '../engine/client'
 import { newId } from '../lib/ids'
+import { emitLive } from '../live'
 import { engineTrackPath } from '../music'
 import { getPlaylist } from '../playlists'
 import { type StationRow, parseSource, stationOfUser, withStationLock } from '../stations'
@@ -183,7 +184,10 @@ export class LearnScheduler {
   private reconcile(row: LearnPlayRow, states: Map<string, EngineMsgState>) {
     const { db } = this.deps
     const now = this.now()
-    const set = (v: Partial<typeof learnPlays.$inferInsert>) => db.update(learnPlays).set(v).where(eq(learnPlays.id, row.id)).run()
+    const set = (v: Partial<typeof learnPlays.$inferInsert>) => {
+      db.update(learnPlays).set(v).where(eq(learnPlays.id, row.id)).run()
+      emitLive(row.userId, 'learn', 'live')
+    }
     const t = states.get(row.trackMsg)
     const i = row.introMsg ? states.get(row.introMsg) : undefined
     if (t?.state === 'done') {
@@ -255,6 +259,7 @@ export class LearnScheduler {
       endedAt: null,
     }
     this.deps.db.insert(learnPlays).values(row).run()
+    emitLive(userId, 'learn')
     return row
   }
 
@@ -265,7 +270,10 @@ export class LearnScheduler {
       | { path: string; title: string; artist: string }
       | undefined
     if (!t) throw new Error('track is gone')
-    const set = (v: Partial<typeof learnPlays.$inferInsert>) => db.update(learnPlays).set(v).where(eq(learnPlays.id, row.id)).run()
+    const set = (v: Partial<typeof learnPlays.$inferInsert>) => {
+      db.update(learnPlays).set(v).where(eq(learnPlays.id, row.id)).run()
+      emitLive(row.userId, 'learn', 'live')
+    }
     let intro = false
     await withStationLock(st.id, async () => {
       if (row.introMsg && row.introClip && existsSync(row.introClip)) {
@@ -326,6 +334,7 @@ export class LearnScheduler {
       // the engine refused: the lost-song path queues it again on the next pass
       console.error(`learn ${st.id}: song not queued:`, e instanceof Error ? e.message : e)
       db.update(learnPlays).set({ status: 'lost', endedAt: this.now() }).where(eq(learnPlays.id, row.id)).run()
+      emitLive(user.id, 'learn')
     }
   }
 
@@ -348,7 +357,10 @@ export class LearnScheduler {
     try {
       const next = drawTrack(bag, pl.id, order, pl.tracks, () => 0).track
       if (skipFlags(this.deps.db, user.id, [next.id]).has(next.id)) return
-      void prep.ensurePrepared(next.id, user.lang).catch(() => {})
+      void prep
+        .ensurePrepared(next.id, user.lang)
+        .then(() => emitLive(user.id, 'learn'))
+        .catch(() => {})
     } catch {
       // nothing to prefetch
     }

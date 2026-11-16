@@ -22,6 +22,7 @@ import { createPlaylist, deletePlaylist, getPlaylist, listPlaylists, playlistBod
 import { applyLearnMode, learnAvailable, learnView, setSkip } from '../learn/plays'
 import { learnArchive, learnNow, learnSong } from '../learn/view'
 import { replayBody, replayMessages } from '../replay'
+import { emitLive, liveBus } from '../live'
 import { airMessage, notReplay, spokenText } from '../say'
 import { changeSource } from '../source'
 import { createPron, deletePron, listPron, pronBody, pronPatch, pronView, updatePron } from '../tts/pronunciation-store'
@@ -40,6 +41,7 @@ import {
 } from '../stations'
 
 export const MAX_KEYS_PER_USER = 20
+const LIVE_HEARTBEAT_MS = 20_000
 export const MAX_PRONUNCIATIONS = 500
 const pagingQuery = z.object({
   dir: z.string().max(500).optional(),
@@ -94,6 +96,53 @@ export function appRoutes(deps: FullDeps) {
     note: m.note,
     reason: m.reason,
     createdAt: m.createdAt,
+  })
+
+  // ---- live updates (Server-Sent Events): invalidation hints of the signed-in user only ----
+  r.get('/events', (c) => {
+    const userId = c.get('user').id
+    const enc = new TextEncoder()
+    let cleanup = () => {}
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const send = (s: string) => {
+          try {
+            controller.enqueue(enc.encode(s))
+          } catch {
+            cleanup()
+          }
+        }
+        const off = liveBus.subscribe(userId, (topic) => send(`event: ${topic}\ndata: {}\n\n`))
+        if (!off) {
+          controller.close()
+          return
+        }
+        const beat = setInterval(() => send(': ping\n\n'), LIVE_HEARTBEAT_MS)
+        cleanup = () => {
+          clearInterval(beat)
+          off()
+          c.req.raw.signal.removeEventListener('abort', cleanup)
+          try {
+            controller.close()
+          } catch {
+            // already closed
+          }
+        }
+        c.req.raw.signal.addEventListener('abort', cleanup)
+        send('retry: 3000\n\n: connected\n\n')
+      },
+      cancel() {
+        cleanup()
+      },
+    })
+    return new Response(body, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+        Connection: 'keep-alive',
+      },
+    })
   })
 
   // ---- radio ("Моё радио") ----
@@ -166,6 +215,7 @@ export function appRoutes(deps: FullDeps) {
     const st = stationOf(c.get('user').id)
     const listenToken = randomToken(24)
     db.update(stations).set({ listenToken, updatedAt: nowIso() }).where(eq(stations.id, st.id)).run()
+    emitLive(st.userId, 'station')
     return c.json(listenLinks(config, { ...st, listenToken }))
   })
 
@@ -241,6 +291,7 @@ export function appRoutes(deps: FullDeps) {
         .set({ ...stSet, updatedAt: nowIso() })
         .where(eq(stations.id, st.id))
         .run()
+    emitLive(user.id, 'station', 'learn')
     return c.json({ ok: true })
   })
 
@@ -464,6 +515,7 @@ export function appRoutes(deps: FullDeps) {
         userId: user.id,
       })
       db.update(messages).set({ clipPath: clip, clipCreatedAt: nowIso() }).where(eq(messages.id, m.id)).run()
+      emitLive(user.id, 'messages')
     } catch (e) {
       console.error('synthesize failed:', e instanceof Error ? e.message : e)
       throw new HttpError(502, 'tts_failed', 'Could not synthesize the message')

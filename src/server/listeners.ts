@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import type { Db } from './db/client'
 import { stations } from './db/schema'
 import type { IcecastApi } from './icecast'
+import { emitLive } from './live'
 
 export const LISTENER_GRACE_MS = 180_000
 
@@ -33,9 +34,17 @@ export class ListenerTracker {
     return seen !== null && this.now() - seen <= this.graceMs
   }
 
+  private lastCount = new Map<string, number | null>()
+
   // asks icecast and records the sighting
   async observe(stationId: string): Promise<ListenerState> {
     const listeners = await this.icecast.listeners(stationId)
+    // the listener count (or the stream coming / going) changed: the open pages refetch the live state
+    if (this.lastCount.has(stationId) && this.lastCount.get(stationId) !== listeners) {
+      const owner = this.db.select({ userId: stations.userId }).from(stations).where(eq(stations.id, stationId)).get()
+      if (owner) emitLive(owner.userId, 'live')
+    }
+    this.lastCount.set(stationId, listeners)
     if ((listeners ?? 0) > 0) this.db.update(stations).set({ lastListenerSeenAt: this.now() }).where(eq(stations.id, stationId)).run()
     return { listeners, recentlyListening: this.recentlyAt(stationId, listeners), lastSeenAt: this.lastSeenAt(stationId) }
   }

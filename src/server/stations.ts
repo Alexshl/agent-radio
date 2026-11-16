@@ -7,6 +7,7 @@ import type { EngineApi, EngineLevels, EngineSourceSpec } from './engine/client'
 import { badRequest } from './lib/http'
 import { newId, nowIso, randomToken } from './lib/ids'
 import { getSetting } from './lib/settings'
+import { emitLive } from './live'
 import { writePlaylist, writeTrackList } from './music'
 import { getPlaylist } from './playlists'
 import { relayUrlFor } from './routes/relay'
@@ -166,6 +167,7 @@ export function setStationSource(db: Db, config: Config, engine: EngineApi, st: 
     await engine.add(st.id, fresh.duckDb, levelsOf(fresh))
     await engine.setSource(st.id, spec)
     db.update(stations).set({ source: next.source, updatedAt: nowIso() }).where(eq(stations.id, st.id)).run()
+    emitLive(st.userId, 'station', 'live', 'learn')
     return next
   })
 }

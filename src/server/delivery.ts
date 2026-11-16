@@ -11,6 +11,7 @@ import type { Db } from './db/client'
 import { messages, stations } from './db/schema'
 import type { FullDeps } from './deps'
 import type { EngineMsgState } from './engine/client'
+import { emitLive } from './live'
 import { introActive } from './learn/plays'
 import { LISTENER_GRACE_MS } from './listeners'
 import { stationById } from './stations'
@@ -53,6 +54,8 @@ export function messageById(db: Db, id: string): MessageRow | undefined {
 
 export function patchMessage(db: Db, id: string, v: Partial<typeof messages.$inferInsert>) {
   db.update(messages).set(v).where(eq(messages.id, id)).run()
+  const owner = db.select({ userId: messages.userId }).from(messages).where(eq(messages.id, id)).get()
+  if (owner) emitLive(owner.userId, 'messages')
 }
 
 export class Delivery {
