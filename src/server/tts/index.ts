@@ -58,7 +58,8 @@ export async function ensureChime(dataDir: string): Promise<string> {
 // BEFORE loudnorm (so a noisy tail is never amplified), then loudness normalisation and 200 ms of digital silence at the end.
 // The tail is handled by reversing the stream (silenceremove only trims the start).
 const TRIM = 'silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15'
-export const VOICE_CHAIN = `${TRIM},areverse,${TRIM},afade=t=in:d=0.15,areverse,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100,aformat=channel_layouts=stereo,apad=pad_dur=0.2`
+// apad before loudnorm: loudnorm needs about 3 s of input, a shorter clip (a 2 s song intro) came out ~20 dB too quiet
+export const VOICE_CHAIN = `${TRIM},areverse,${TRIM},afade=t=in:d=0.15,areverse,apad=whole_dur=3.2,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100,aformat=channel_layouts=stereo,apad=pad_dur=0.2`
 
 export interface ClipRequest {
   text: string

@@ -12,6 +12,8 @@ import { LrcLibClient } from './lrclib'
 
 export const NOT_FOUND_RETRY_MS = 30 * 24 * 3600_000
 export const ERROR_RETRY_MS = 3600_000
+// the model failing is usually transient (the local GPU busy with something else): try again soon
+export const LLM_ERROR_RETRY_MS = 10 * 60_000
 const MAX_LINES = 150
 const MAX_QUOTE_WORDS = 8
 const MAX_INTRO_CHARS = 600
@@ -118,7 +120,7 @@ export class SongPreparer {
     if (this.getNotes(trackId, lang)) return 'ready'
     if (!this.llm.configured()) return 'no_provider'
     const failed = this.failedAt.get(`${trackId}:${lang}`)
-    if (failed !== undefined && this.now() - failed < ERROR_RETRY_MS) return 'error'
+    if (failed !== undefined && this.now() - failed < LLM_ERROR_RETRY_MS) return 'error'
     const track = this.db.select().from(tracks).where(eq(tracks.id, trackId)).get()
     if (!track) return 'error'
     let lyr = this.db.select().from(songLyrics).where(eq(songLyrics.trackId, trackId)).get()
