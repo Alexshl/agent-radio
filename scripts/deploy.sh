@@ -260,7 +260,11 @@ deploy_prod() {
   [ $dry = 1 ] && { say 'dry run: nothing changed.'; exit 0; }
 
   # ---- backup, keep the previous image
-  (cd "$HERE" && COMPOSE_PROJECT_NAME=$PROJECT "$HERE/scripts/backup.sh")
+  if [ -n "$(dc ps -q --status running app 2>/dev/null)" ]; then
+    (cd "$HERE" && COMPOSE_PROJECT_NAME=$PROJECT "$HERE/scripts/backup.sh")
+  else
+    say 'backup skipped: the app is not running on this host yet (first deploy there)'
+  fi
   if docker image inspect "$APP_IMAGE:latest" >/dev/null 2>&1; then
     docker tag "$APP_IMAGE:latest" "$APP_IMAGE:previous"
     say "previous app image kept as $APP_IMAGE:previous"
