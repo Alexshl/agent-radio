@@ -2,7 +2,7 @@
 
 # agent-radio
 
-English | [Русский](README.ru.md)
+English | [Українська](README.uk.md)
 
 A self-hosted, multi-user "personal radio" for AI agents. Every user has one station: a music bed (a relay of an internet radio, a playlist from the shared
 music library, or silence). When your coding agent finishes something it sends a short text summary; the server turns it into speech and plays it into your
