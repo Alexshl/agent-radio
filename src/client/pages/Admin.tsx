@@ -9,9 +9,10 @@ import { ErrorBox, Loading, PageHead, Seg, Switch, copyText, useErrorToast } fro
 import { LANGS, LANG_NAMES, S } from '../i18n'
 import type { Lang } from '../i18n'
 import { Shell } from '../layouts/Shell'
+import { LearnTab } from './AdminLearn'
 import { fmtBytes, fmtDate, fmtDb, fmtRate, fmtWhen, initials } from '../lib/format'
 
-type Tab = 'users' | 'tts' | 'llm' | 'lib' | 'presets' | 'server'
+type Tab = 'users' | 'tts' | 'llm' | 'learn' | 'lib' | 'presets' | 'server'
 const WHEN = { today: S.common.today, yesterday: S.common.yesterday, never: S.common.never }
 
 interface AdminUser {
@@ -1469,7 +1470,7 @@ function ServerTab() {
 export function Admin() {
   const [tab, setTab] = useState<Tab>('users')
   const server = useQuery({ queryKey: ['admin-server'], queryFn: () => get<ServerInfo>('/admin/server'), refetchInterval: 10_000 })
-  const tabs: Tab[] = ['users', 'tts', 'llm', 'lib', 'presets', 'server']
+  const tabs: Tab[] = ['users', 'tts', 'llm', 'learn', 'lib', 'presets', 'server']
   return (
     <Shell crumb={S.nav.admin}>
       <PageHead
@@ -1495,6 +1496,7 @@ export function Admin() {
       {tab === 'users' && <UsersTab />}
       {tab === 'tts' && <TtsTab />}
       {tab === 'llm' && <LlmTab />}
+      {tab === 'learn' && <LearnTab />}
       {tab === 'lib' && <LibTab />}
       {tab === 'presets' && <PresetsTab />}
       {tab === 'server' && <ServerTab />}

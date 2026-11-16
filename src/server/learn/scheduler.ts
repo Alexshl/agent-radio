@@ -10,6 +10,7 @@ import { learnPlays, stations, users } from '../db/schema'
 import type { FullDeps } from '../deps'
 import type { EngineMsgState } from '../engine/client'
 import { newId } from '../lib/ids'
+import { getSetting } from '../lib/settings'
 import { emitLive } from '../live'
 import { engineTrackPath } from '../music'
 import { getPlaylist } from '../playlists'
@@ -323,9 +324,9 @@ export class LearnScheduler {
       .where(eq(stations.id, st.id))
       .run()
     let clip: string | null = null
-    // the prepared spoken intro when the notes are ready, else the plain "artist - title"
+    // an intro only with the prepared notes of a song with lyrics; no notes yet = no intro
     const notes = withIntro ? this.opts.prep?.getNotes(track.id, user.lang) : null
-    if (withIntro) clip = await this.makeIntro(user, notes?.introText || introText(track))
+    if (notes?.introText) clip = await this.makeIntro(user, notes.introText)
     if (listening) this.prefetch(user, pl, order, bag)
     const row = this.newRow(user.id, st.id, track.id, clip, 1)
     try {
@@ -357,8 +358,10 @@ export class LearnScheduler {
     try {
       const next = drawTrack(bag, pl.id, order, pl.tracks, () => 0).track
       if (skipFlags(this.deps.db, user.id, [next.id]).has(next.id)) return
+      // learn.alwaysFresh: the notes are made again before every play (the lyrics stay cached)
+      const fresh = getSetting(this.deps.db, 'learn.alwaysFresh') === true
       void prep
-        .ensurePrepared(next.id, user.lang)
+        .ensurePrepared(next.id, user.lang, { fresh })
         .then(() => emitLive(user.id, 'learn'))
         .catch(() => {})
     } catch {

@@ -18,6 +18,7 @@ import { LEVEL_RANGES, RATE_RANGE, parseSource } from '../stations'
 import { diskSpace, trashTrack } from '../uploads'
 import { createPron, deletePron, listPron, pronBody, pronPatch, pronView, updatePron } from '../tts/pronunciation-store'
 import { LLM_LABEL, LLM_PROVIDERS, LlmError, type LlmProvider, isLlmProvider, llmSecretName } from '../learn/llm'
+import { learnAdminRoutes } from './admin-learn'
 import { secretName } from '../tts/registry'
 import { DEFAULT_LANGS, cap, filterLangs } from '../tts/piper-catalog'
 import { PIPER_DEFAULT_BY_LANG, PROVIDER_IDS, PROVIDER_LABEL, type ProviderId } from '../tts/voices'
@@ -284,6 +285,8 @@ export function adminRoutes(deps: FullDeps) {
       return c.json({ ok: false, error: error.slice(0, 300) }, 200)
     }
   })
+
+  r.route('/learn', learnAdminRoutes(deps))
 
   // ---- local neural voices (tts-local sidecar) ----
 

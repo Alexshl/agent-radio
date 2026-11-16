@@ -1,14 +1,17 @@
 // Lyrics and notes of a track, prepared ahead of its turn: LRCLIB (or the web search of Anthropic) -> one model call (translation, summary,
 // spoken intro). Cached per track (song_lyrics) and per track + target language (song_notes). One preparation at a time (the local model
 // sits on one GPU); the same track + language asked twice shares one run.
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Db } from '../db/client'
-import { songLyrics, songNotes, tracks } from '../db/schema'
+import { songLyrics, songNotes, tracks, users } from '../db/schema'
 import { nowIso } from '../lib/ids'
+import { getSetting } from '../lib/settings'
+import { emitLive } from '../live'
 import { LlmError, type LlmService } from './llm'
 import { parseLrc, plainLines } from './lrc'
 import { LrcLibClient } from './lrclib'
+import { DEFAULT_PROMPT, MAX_INTRO_CHARS, buildSystem } from './prompt'
 
 export const NOT_FOUND_RETRY_MS = 30 * 24 * 3600_000
 export const ERROR_RETRY_MS = 3600_000
@@ -16,19 +19,8 @@ export const ERROR_RETRY_MS = 3600_000
 export const LLM_ERROR_RETRY_MS = 10 * 60_000
 const MAX_LINES = 150
 const MAX_QUOTE_WORDS = 8
-const MAX_INTRO_CHARS = 900
-const LANG_NAME: Record<string, string> = {
-  uk: 'Ukrainian',
-  ru: 'Russian',
-  en: 'English',
-  lv: 'Latvian',
-  et: 'Estonian',
-  lt: 'Lithuanian',
-  de: 'German',
-  sv: 'Swedish',
-}
 
-export type PrepareStatus = 'ready' | 'no_provider' | 'capped' | 'instrumental' | 'error'
+export type PrepareStatus = 'ready' | 'no_provider' | 'capped' | 'instrumental' | 'no_lyrics' | 'error'
 
 export interface NotesRow {
   pairs: { src: string; tr: string }[] | null
@@ -54,30 +46,6 @@ export function introProblem(text: string): string | null {
   }
   return null
 }
-
-const SYSTEM = (lang: string, hasLyrics: boolean) =>
-  `You are a friendly language teacher who hosts a radio show. Before a song you prepare the listener so that, while it plays, they catch
-words and expressions of the original language and understand more of it. The listener knows the target language, not the song's language.
-Target language of everything you write: ${LANG_NAME[lang] ?? lang} (code ${lang}).
-Return JSON with the keys:
-- "original_lang": ISO 639-1 code of the language the song is sung in.
-- "summary": 2-3 sentences in the target language about what the song is about.
-- "intro_script": what you say on air before the song, in the target language, natural spoken style (it is read by a speech synthesizer:
-  no lists, no brackets, no emoji), 3-6 sentences, at most ${MAX_INTRO_CHARS} characters. Say the artist and the title, then in one plain
-  sentence what the song is about emotionally (for example: it is a love song, he is suffering because she left). ${
-    hasLyrics
-      ? `Then, as a teacher, point out 2-3 things from the lyrics worth listening for, preferring idioms, set phrases, phrasal verbs and
-  colloquial turns over plain words: quote each in the original language (in quotes, at most 6 words), say what it literally says if that
-  differs, and what it really means here (for example: here he sings "break my heart", an idiom: to hurt someone deeply in love). Only use
-  phrases that really are in the lyrics below. `
-      : 'You have no lyrics: do not quote anything and do not invent the content; only say the artist and the title and, if you are sure, one general remark. '
-  }
-- "hooks": the original phrases you quoted in the intro (array of strings).
-- "translations": ${
-    hasLyrics
-      ? 'an array with the translation of EVERY numbered line of the lyrics into the target language, in the same order and the same count; an empty array if the song is already in the target language.'
-      : 'an empty array.'
-  }`
 
 export class SongPreparer {
   private inflight = new Map<string, Promise<PrepareStatus>>()
@@ -110,23 +78,24 @@ export class SongPreparer {
     return { pairs: json(r.pairs, null), summary: r.summary, introText: r.introText, hooks: json(r.hooks, [] as string[]) }
   }
 
-  ensurePrepared(trackId: string, lang: string): Promise<PrepareStatus> {
+  // fresh: ignore the cached notes (and an earlier failure) and ask the model again; the lyrics stay cached
+  ensurePrepared(trackId: string, lang: string, opts: { fresh?: boolean } = {}): Promise<PrepareStatus> {
     const key = `${trackId}:${lang}`
     const cur = this.inflight.get(key)
     if (cur) return cur
-    if (this.getNotes(trackId, lang)) return Promise.resolve('ready')
-    const run = this.chain.then(() => this.prepare(trackId, lang)).catch((): PrepareStatus => 'error')
+    if (!opts.fresh && this.getNotes(trackId, lang)) return Promise.resolve('ready')
+    const run = this.chain.then(() => this.prepare(trackId, lang, opts.fresh === true)).catch((): PrepareStatus => 'error')
     this.chain = run
     const p = run.finally(() => this.inflight.delete(key))
     this.inflight.set(key, p)
     return p
   }
 
-  private async prepare(trackId: string, lang: string): Promise<PrepareStatus> {
-    if (this.getNotes(trackId, lang)) return 'ready'
+  private async prepare(trackId: string, lang: string, force = false): Promise<PrepareStatus> {
+    if (!force && this.getNotes(trackId, lang)) return 'ready'
     if (!this.llm.configured()) return 'no_provider'
     const failed = this.failedAt.get(`${trackId}:${lang}`)
-    if (failed !== undefined && this.now() - failed < LLM_ERROR_RETRY_MS) return 'error'
+    if (!force && failed !== undefined && this.now() - failed < LLM_ERROR_RETRY_MS) return 'error'
     const track = this.db.select().from(tracks).where(eq(tracks.id, trackId)).get()
     if (!track) return 'error'
     let lyr = this.db.select().from(songLyrics).where(eq(songLyrics.trackId, trackId)).get()
@@ -149,6 +118,8 @@ export class SongPreparer {
     if (!lyr) return 'error'
     if (lyr.status === 'instrumental') return 'instrumental'
     if (lyr.status === 'error') return 'error'
+    // no lyrics (not found): no notes and no model call; the status stays cached
+    if (lyr.status !== 'found' || !lyr.lyrics?.trim()) return 'no_lyrics'
     return this.writeNotes(trackId, lang, track, lyr)
   }
 
@@ -202,28 +173,66 @@ export class SongPreparer {
     return this.saveLyrics(track.id, { status: 'not_found', lyrics: null, synced: null, source: null })
   }
 
+  // the active template: the admin's override or the default of the repo
+  promptTemplate(): string {
+    return getSetting(this.db, 'learn.prompt') || DEFAULT_PROMPT
+  }
+
+  // One model call for a song; nothing is saved. `template` overrides the active one (the playground).
+  private async generate(
+    input: { artist: string; title: string; lyrics: string | null },
+    lang: string,
+    template: string = this.promptTemplate(),
+  ) {
+    const lines = input.lyrics ? plainLines(input.lyrics).slice(0, MAX_LINES) : []
+    const hasLyrics = lines.length > 0
+    const user = `Artist: ${input.artist || 'unknown'}\nTitle: ${input.title}\n${
+      hasLyrics ? `Lyrics, numbered:\n${lines.map((l, i) => `${i + 1}. ${l}`).join('\n')}` : 'Lyrics: not available'
+    }`
+    const r = await this.llm.chatJson(buildSystem(template, lang, hasLyrics), user, notesSchema)
+    const d = r.data
+    const orig = d.original_lang.toLowerCase().slice(0, 2)
+    const tr = d.translations ?? []
+    // a translation with a different line count is not paired (the summary and the intro stay)
+    const pairs = hasLyrics && orig !== lang && tr.length === lines.length ? lines.map((src, i) => ({ src, tr: tr[i] as string })) : null
+    return { r, d, orig, lines, hasLyrics, pairs }
+  }
+
+  // The playground: the model answer for any text and prompt, nothing is written (it still counts against the daily limit).
+  async preview(input: { artist: string; title: string; lyrics: string | null }, lang: string, template?: string) {
+    const started = Date.now()
+    const g = await this.generate(input, lang, template)
+    const problems: string[] = []
+    const p = introProblem(g.d.intro_script)
+    if (p) problems.push(p)
+    const tr = g.d.translations ?? []
+    if (g.hasLyrics && g.orig !== lang && tr.length !== g.lines.length)
+      problems.push(`translations: ${tr.length} lines instead of ${g.lines.length}`)
+    return {
+      originalLang: g.orig,
+      summary: g.d.summary,
+      introScript: g.d.intro_script,
+      hooks: g.d.hooks ?? [],
+      translations: tr,
+      problems,
+      model: `${g.r.provider}:${g.r.model}`,
+      tokensIn: g.r.tokensIn,
+      tokensOut: g.r.tokensOut,
+      ms: Date.now() - started,
+    }
+  }
+
   private async writeNotes(
     trackId: string,
     lang: string,
     track: typeof tracks.$inferSelect,
     lyr: typeof songLyrics.$inferSelect,
   ): Promise<PrepareStatus> {
-    const lines = lyr.lyrics ? plainLines(lyr.lyrics).slice(0, MAX_LINES) : []
-    const hasLyrics = lines.length > 0
-    const user = `Artist: ${track.artist || 'unknown'}\nTitle: ${track.title}\n${
-      hasLyrics ? `Lyrics, numbered:\n${lines.map((l, i) => `${i + 1}. ${l}`).join('\n')}` : 'Lyrics: not available'
-    }`
     const failKey = `${trackId}:${lang}`
     try {
-      const r = await this.llm.chatJson(SYSTEM(lang, hasLyrics), user, notesSchema)
-      const d = r.data
+      const { r, d, orig, pairs, hasLyrics } = await this.generate({ artist: track.artist, title: track.title, lyrics: lyr.lyrics }, lang)
       const problem = introProblem(d.intro_script)
       if (problem) throw new Error(problem)
-      const orig = d.original_lang.toLowerCase().slice(0, 2)
-      const same = orig === lang
-      const tr = d.translations ?? []
-      // a translation with a different line count is not paired (the summary and the intro stay)
-      const pairs = hasLyrics && !same && tr.length === lines.length ? lines.map((src, i) => ({ src, tr: tr[i] as string })) : null
       if (hasLyrics && lyr.lang !== orig) this.db.update(songLyrics).set({ lang: orig }).where(eq(songLyrics.trackId, trackId)).run()
       const row = {
         trackId,
@@ -250,5 +259,81 @@ export class SongPreparer {
       this.failedAt.set(failKey, this.now())
       return 'error'
     }
+  }
+
+  // ---- admin: forget notes (the lyrics are never touched) and make them again ----
+
+  // tell the open pages of the listeners (learn mode on) of these languages
+  private notify(langs: Iterable<string>) {
+    const set = [...new Set(langs)]
+    if (!set.length) return
+    for (const u of this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.learnMode, 1), inArray(users.lang, set)))
+      .all())
+      emitLive(u.id, 'learn')
+  }
+
+  // deletes the notes of one track (one language or all) or of every track; returns the removed rows
+  deleteNotes(filter: { trackId?: string; lang?: string } = {}): { trackId: string; lang: string }[] {
+    const conds = []
+    if (filter.trackId) conds.push(eq(songNotes.trackId, filter.trackId))
+    if (filter.lang) conds.push(eq(songNotes.lang, filter.lang))
+    const rows = this.db
+      .delete(songNotes)
+      .where(conds.length ? and(...conds) : undefined)
+      .returning({ trackId: songNotes.trackId, lang: songNotes.lang })
+      .all()
+    for (const r of rows) this.failedAt.delete(`${r.trackId}:${r.lang}`)
+    this.notify(rows.map((r) => r.lang))
+    return rows
+  }
+
+  // deletes the notes of one track and prepares them again in the background (no waiting); the lyrics stay
+  regenerateTrack(trackId: string, lang?: string): { trackId: string; lang: string }[] {
+    const rows = this.deleteNotes({ trackId, lang })
+    for (const r of rows) void this.ensurePrepared(r.trackId, r.lang, { fresh: true }).then(() => this.notify([r.lang]))
+    return rows
+  }
+
+  private bulk = { total: 0, done: 0, failed: 0, running: false, capped: false }
+
+  progress() {
+    return { ...this.bulk }
+  }
+
+  // Deletes ALL notes (of one language when given) and makes them again, one after another through the same queue as every other
+  // preparation, until the daily limit stops it. Only the tracks that had notes and still have lyrics are redone. Returns false when
+  // a run is already going.
+  regenerateAll(lang?: string): boolean {
+    if (this.bulk.running) return false
+    const withLyrics = new Set(
+      this.db
+        .select({ id: songLyrics.trackId, lyrics: songLyrics.lyrics })
+        .from(songLyrics)
+        .where(eq(songLyrics.status, 'found'))
+        .all()
+        .filter((r) => r.lyrics?.trim())
+        .map((r) => r.id),
+    )
+    const todo = this.deleteNotes({ lang }).filter((r) => withLyrics.has(r.trackId))
+    this.bulk = { total: todo.length, done: 0, failed: 0, running: todo.length > 0, capped: false }
+    if (!todo.length) return true
+    void (async () => {
+      for (const [i, r] of todo.entries()) {
+        const st = await this.ensurePrepared(r.trackId, r.lang, { fresh: true })
+        if (st === 'ready') this.bulk.done++
+        else this.bulk.failed++
+        this.notify([r.lang])
+        if (st === 'capped' || st === 'no_provider') {
+          this.bulk.capped = st === 'capped'
+          this.bulk.failed += todo.length - i - 1
+          break
+        }
+      }
+      this.bulk.running = false
+    })()
+    return true
   }
 }

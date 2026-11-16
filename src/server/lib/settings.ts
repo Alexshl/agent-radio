@@ -29,6 +29,10 @@ export const DEFAULTS = {
   'learn.webSearch': false,
   'learn.dailyLlmCalls': 200,
   'learn.localUrl': null as string | null,
+  // the admin's override of the intro prompt template (null = the default of the repo, see learn/prompt.ts)
+  'learn.prompt': null as string | null,
+  // regenerate the notes of a song each time it is about to be played (lyrics stay cached)
+  'learn.alwaysFresh': false,
   // model calls made today (UTC day) and their tokens
   'learn.usage': { day: '', calls: 0, tokensIn: 0, tokensOut: 0 },
 }
