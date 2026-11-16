@@ -294,13 +294,15 @@ if [ -z "$COMPOSE" ]; then
   skip 'learn mode (ACCEPT_COMPOSE not set)'
 else
   ORIG_LEARN=$(learn_ctl orig)
+  # a listener first: with nobody listening the scheduler queues songs without intros (no model calls)
+  listener 160 s6 --min-bytes 2000000 --max-gap 4
+  wait_listeners min 15 || log "note: the listener is not counted yet"
   ON=$(learn_ctl on)
   if [ "$ON" = NOTRACKS ]; then
     skip 'learn mode: the library has fewer than 2 tracks'
   elif [ "$ON" != OK ]; then
     fail "could not switch learn mode on: $ON"
   else
-    listener 150 s6 --min-bytes 2000000 --max-gap 4
     end=$((SECONDS + 120))
     LS=""
     while [ $SECONDS -lt $end ]; do
