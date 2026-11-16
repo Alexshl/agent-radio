@@ -1,4 +1,5 @@
 import { Route, Routes } from 'react-router'
+import { useLiveEvents } from './api/live'
 import { AcceptLink, Login, RequireAuth } from './pages/Auth'
 import { Admin } from './pages/Admin'
 import { Connect } from './pages/Connect'
@@ -11,6 +12,7 @@ import { Remote } from './pages/Remote'
 import { Security } from './pages/Security'
 
 export function App() {
+  useLiveEvents()
   return (
     <Routes>
       <Route path="/login" element={<Login />} />

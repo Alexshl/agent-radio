@@ -3,6 +3,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { learnPlays, learnSongPrefs, stations, type users } from '../db/schema'
 import { nowIso } from '../lib/ids'
+import { emitLive } from '../live'
 import type { FullDeps } from '../deps'
 import { parseSource, setStationSource, withStationLock } from '../stations'
 import type { LlmService } from './llm'
@@ -62,6 +63,7 @@ export function setSkip(db: Db, userId: string, trackId: string, skip: boolean) 
     .values({ userId, trackId, skip: skip ? 1 : 0, createdAt: nowIso() })
     .onConflictDoUpdate({ target: [learnSongPrefs.userId, learnSongPrefs.trackId], set: { skip: skip ? 1 : 0 } })
     .run()
+  emitLive(userId, 'learn')
 }
 
 // Closes everything that is still open (learn mode switched off, the source is no longer a playlist): nothing will be queued again.
@@ -70,6 +72,8 @@ export function closeOpenPlays(db: Db, stationId: string, now = Date.now()) {
     .set({ status: 'lost', retried: 1, endedAt: now })
     .where(and(eq(learnPlays.stationId, stationId), inArray(learnPlays.status, OPEN_STATUSES)))
     .run()
+  const owner = db.select({ userId: stations.userId }).from(stations).where(eq(stations.id, stationId)).get()
+  if (owner) emitLive(owner.userId, 'learn')
 }
 
 // Switches learn mode of a user and re-applies the station source (the engine plays "queue" instead of "playlist" and back).

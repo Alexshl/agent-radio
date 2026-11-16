@@ -14,6 +14,7 @@ import { requireApiKey } from '../lib/api-keys'
 import { HttpError, badRequest } from '../lib/http'
 import { newId, nowIso } from '../lib/ids'
 import { getSetting } from '../lib/settings'
+import { emitLive } from '../live'
 import { airMessage, checkHourlyLimit } from '../say'
 import { changeSource } from '../source'
 import { levelFields, parseSource, sourceSchema, stationOfUser, userById } from '../stations'
@@ -251,11 +252,13 @@ export function apiRoutes(deps: FullDeps) {
         db.insert(messages)
           .values({ ...base, status: 'skipped', reason: 'nobody_listening' })
           .run()
+        emitLive(userId, 'messages')
         return c.json({ status: 'skipped', listeners, id, title, durationSec })
       }
       db.insert(messages)
         .values({ ...base, status: 'waiting' })
         .run()
+      emitLive(userId, 'messages')
       let status: 'onair' | 'waiting' | 'skipped'
       try {
         status = await deps.delivery.offer(id, st.id)

@@ -11,6 +11,7 @@ import { messages, type users } from './db/schema'
 import type { FullDeps } from './deps'
 import { HttpError, badRequest, notFound } from './lib/http'
 import { newId, nowIso } from './lib/ids'
+import { emitLive } from './live'
 import { REPLAY_NOTE, spokenText } from './say'
 import type { StationRow } from './stations'
 
@@ -110,12 +111,14 @@ export async function replayMessages(
           createdAt: nowIso(),
         })
         .run()
+      emitLive(user.id, 'messages')
       try {
         const res = await delivery.offer(id, st.id)
         if (res === 'waiting') status = 'waiting'
       } catch (e) {
         console.error('replay failed:', e instanceof Error ? e.message : e)
         db.update(messages).set({ status: 'failed', reason: 'push_failed' }).where(eq(messages.id, id)).run()
+        emitLive(user.id, 'messages')
         throw new HttpError(502, 'replay_failed', 'Could not put the message on air')
       }
       ids.push(id)

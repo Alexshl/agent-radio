@@ -6,6 +6,7 @@ import { messages, type users } from './db/schema'
 import { HttpError } from './lib/http'
 import { newId, nowIso } from './lib/ids'
 import { getSetting } from './lib/settings'
+import { emitLive } from './live'
 import type { StationRow } from './stations'
 
 type UserRow = typeof users.$inferSelect
@@ -65,6 +66,7 @@ export async function airMessage(
     db.insert(messages)
       .values({ ...base, status: 'skipped', clipPath: null, reason: 'nobody_listening' })
       .run()
+    emitLive(user.id, 'messages')
     return { id: base.id, status: 'skipped', listeners }
   }
   const release = deps.userLock.acquire(user.id)
@@ -88,6 +90,7 @@ export async function airMessage(
       db.insert(messages)
         .values({ ...base, status: 'queued', clipPath: null })
         .run()
+      emitLive(user.id, 'messages')
       void finishQueued(deps, base.id, st.id, synth).finally(release)
       return { id: base.id, status: 'queued', listeners }
     }
@@ -98,12 +101,14 @@ export async function airMessage(
     db.insert(messages)
       .values({ ...base, status: 'failed', reason: 'tts_failed' })
       .run()
+    emitLive(user.id, 'messages')
     release()
     throw new HttpError(502, 'tts_failed', 'Could not synthesize or play the message')
   }
   db.insert(messages)
     .values({ ...base, status: 'waiting', clipPath: clip, clipCreatedAt: nowIso() })
     .run()
+  emitLive(user.id, 'messages')
   try {
     const status = await delivery.offer(base.id, st.id)
     return { id: base.id, status: status === 'onair' ? 'aired' : status, listeners }

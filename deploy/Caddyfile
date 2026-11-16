@@ -51,6 +51,13 @@
 		}
 	}
 
+	# live updates (Server-Sent Events): flushed to the browser at once, never buffered
+	handle /api/app/events {
+		reverse_proxy app:8790 {
+			flush_interval -1
+		}
+	}
+
 	handle {
 		reverse_proxy app:8790 {
 			lb_try_duration 10s
