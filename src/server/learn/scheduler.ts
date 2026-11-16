@@ -25,7 +25,7 @@ const MAX_ATTEMPTS = 3
 const INTRO_TIMEOUT_MS = 25_000
 
 type UserRow = typeof users.$inferSelect
-type Part = Pick<FullDeps, 'db' | 'config' | 'engine' | 'tts'>
+type Part = Pick<FullDeps, 'db' | 'config' | 'engine' | 'tts'> & Partial<Pick<FullDeps, 'listeners'>>
 interface Track {
   id: string
   path: string
@@ -306,17 +306,19 @@ export class LearnScheduler {
     if (!track || !bag) return
     const every = LEARN_EVERY.includes(user.learnEvery as 1 | 2 | 3) ? user.learnEvery : 1
     const skipped = skipFlags(db, user.id, [track.id]).has(track.id)
+    // nobody listening (the radio plays on overnight): no intro and no model calls; the counter does not move either
+    const listening = await this.hasListener(st.id)
     // a song the user knows: no intro, and it does not count
-    const withIntro = !skipped && st.learnCounter % every === 0
+    const withIntro = listening && !skipped && st.learnCounter % every === 0
     db.update(stations)
-      .set({ learnBag: JSON.stringify(bag), learnCounter: skipped ? st.learnCounter : st.learnCounter + 1 })
+      .set({ learnBag: JSON.stringify(bag), learnCounter: skipped || !listening ? st.learnCounter : st.learnCounter + 1 })
       .where(eq(stations.id, st.id))
       .run()
     let clip: string | null = null
     // the prepared spoken intro when the notes are ready, else the plain "artist - title"
     const notes = withIntro ? this.opts.prep?.getNotes(track.id, user.lang) : null
     if (withIntro) clip = await this.makeIntro(user, notes?.introText || introText(track))
-    this.prefetch(user, pl, order, bag)
+    if (listening) this.prefetch(user, pl, order, bag)
     const row = this.newRow(user.id, st.id, track.id, clip, 1)
     try {
       await this.pushRow(st, row, introText(track))
@@ -324,6 +326,16 @@ export class LearnScheduler {
       // the engine refused: the lost-song path queues it again on the next pass
       console.error(`learn ${st.id}: song not queued:`, e instanceof Error ? e.message : e)
       db.update(learnPlays).set({ status: 'lost', endedAt: this.now() }).where(eq(learnPlays.id, row.id)).run()
+    }
+  }
+
+  private async hasListener(stationId: string): Promise<boolean> {
+    // without a tracker (tests) everybody is listening
+    if (!this.deps.listeners) return true
+    try {
+      return ((await this.deps.listeners.observe(stationId)).listeners ?? 0) > 0
+    } catch {
+      return true
     }
   }
 

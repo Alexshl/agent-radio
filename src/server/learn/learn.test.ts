@@ -125,6 +125,16 @@ describe('LearnScheduler', () => {
     expect(t.makeClip).toHaveBeenCalledWith(expect.objectContaining({ chime: false, lang: 'uk' }))
   })
 
+  it('nobody listening: the song is queued without an intro and no clip is made', async () => {
+    const { t } = await ready()
+    const w = world(t)
+    const listeners = { observe: async () => ({ listeners: 0 }) } as unknown as NonNullable<(typeof t.deps)['listeners']>
+    await new LearnScheduler({ ...t.deps, listeners }, { now: w.clock }).tick()
+    expect(trackPushes(t)).toHaveLength(1)
+    expect(introPushes(t)).toHaveLength(0)
+    expect(t.makeClip).not.toHaveBeenCalled()
+  })
+
   it('the shuffle bag survives an app restart: a round has no repeats', async () => {
     const { t } = await ready()
     const w = world(t)
