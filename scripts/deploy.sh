@@ -277,6 +277,10 @@ deploy_prod() {
     [ -n "$d" ] && [ "$d" != front ] && dc up -d --no-deps --force-recreate "$d"
   done
   dc up -d --no-deps app
+  # the local-voices sidecar (profile local-tts): created when missing (a new host), otherwise left running
+  if grep -q '^COMPOSE_PROFILES=.*local-tts' "$ENV_FILE" && [ -z "$(dc ps -q --status running tts-local 2>/dev/null)" ]; then
+    dc up -d --no-deps tts-local
+  fi
   if [[ " ${drop[*]:-} " == *" front "* ]]; then
     dc up -d --no-deps --force-recreate front
   else
