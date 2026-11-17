@@ -195,11 +195,11 @@ describe('iOS app handoff (PKCE)', () => {
   async function codeFor(t: ReturnType<typeof setup>) {
     await addUser(t, 'a@x.io')
     const cookie = await login(t, 'a@x.io')
-    const res = await t.req(`/api/auth/app-handoff?cc=${cc}`, { cookie })
-    expect(res.status).toBe(302)
+    const res = await t.req('/api/auth/app-handoff', { method: 'POST', cookie, json: { cc } })
+    expect(res.status).toBe(200)
     expect(res.headers.get('set-cookie')).toBeNull()
     expect(res.headers.get('cache-control')).toBe('no-store')
-    const loc = res.headers.get('location') ?? ''
+    const loc = ((await res.json()) as { url: string }).url
     expect(loc).toMatch(/^agentradio:\/\/auth\?code=/)
     return decodeURIComponent(loc.split('code=')[1] ?? '')
   }
@@ -210,15 +210,15 @@ describe('iOS app handoff (PKCE)', () => {
 
   it('rejects a handoff without a valid cc', async () => {
     const t = setup()
-    expect((await t.req('/api/auth/app-handoff')).status).toBe(400)
-    expect((await t.req('/api/auth/app-handoff?cc=short')).status).toBe(400)
+    expect((await t.req('/api/auth/app-handoff', { method: 'POST', json: {} })).status).toBe(400)
+    expect((await t.req('/api/auth/app-handoff', { method: 'POST', json: { cc: 'short' } })).status).toBe(400)
+    // never by a plain link
+    expect((await t.req(`/api/auth/app-handoff?cc=${cc}`)).status).not.toBe(200)
   })
 
-  it('sends a signed-out browser to the login page with the challenge', async () => {
+  it('refuses a handoff without a session', async () => {
     const t = setup()
-    const res = await t.req(`/api/auth/app-handoff?cc=${cc}`)
-    expect(res.status).toBe(302)
-    expect(res.headers.get('location')).toBe(`/login?app=1&cc=${cc}`)
+    expect((await t.req('/api/auth/app-handoff', { method: 'POST', json: { cc } })).status).toBe(401)
   })
 
   it('trades code + verifier for a working session token, without setting a cookie', async () => {

@@ -84,17 +84,19 @@ export function authRoutes(deps: FullDeps) {
   // ---- native iOS app sign-in (PKCE). The app opens /login?app=1&cc=<base64url(SHA256(verifier))> in the system
   // browser sheet (ASWebAuthenticationSession, passkeys work there). Signed in, the handoff issues a one-time code
   // bound to the user and cc, never a session; the app trades code + verifier for a session token over JSON.
-  r.get('/app-handoff', async (c) => {
-    const cc = c.req.query('cc') ?? ''
+  // POST from our own login page right after an interactive sign-in (never a GET a foreign page could trigger by a link)
+  r.post('/app-handoff', async (c) => {
+    const body = z.object({ cc: z.string() }).safeParse(await c.req.json().catch(() => null))
+    const cc = body.success ? body.data.cc : ''
     if (!CC_RE.test(cc)) throw badRequest('invalid_challenge', 'Expected cc=base64url(SHA256(verifier))')
     c.header('Cache-Control', 'no-store')
     const current = getCookie(c, HOST_SESSION_COOKIE) ?? getCookie(c, SESSION_COOKIE)
     const user = current ? await userOfToken(db, current) : null
-    if (!user) return c.redirect(`/login?app=1&cc=${cc}`)
+    if (!user) throw new HttpError(401, 'unauthorized', 'Sign in first')
     const code = randomToken(32)
     sweepAppCodes()
     appCodes.set(code, { userId: user.id, cc, expiresAt: Date.now() + APP_CODE_TTL_MS })
-    return c.redirect(`agentradio://auth?code=${encodeURIComponent(code)}`)
+    return c.json({ url: `agentradio://auth?code=${encodeURIComponent(code)}` })
   })
 
   r.post('/app-token', async (c) => {
