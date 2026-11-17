@@ -68,6 +68,13 @@ export class SongPreparer {
       .where(and(eq(songNotes.trackId, trackId), eq(songNotes.lang, lang)))
       .get()
     if (!r) return null
+    // an intro only for a song whose lyrics were found (old notes made from the title alone must not go on air)
+    const lyr = this.db
+      .select({ status: songLyrics.status, lyrics: songLyrics.lyrics })
+      .from(songLyrics)
+      .where(eq(songLyrics.trackId, trackId))
+      .get()
+    const hasLyrics = lyr?.status === 'found' && !!lyr.lyrics?.trim()
     const json = <T>(s: string | null, d: T): T => {
       try {
         return s ? (JSON.parse(s) as T) : d
@@ -75,7 +82,12 @@ export class SongPreparer {
         return d
       }
     }
-    return { pairs: json(r.pairs, null), summary: r.summary, introText: r.introText, hooks: json(r.hooks, [] as string[]) }
+    return {
+      pairs: json(r.pairs, null),
+      summary: r.summary,
+      introText: hasLyrics ? r.introText : null,
+      hooks: json(r.hooks, [] as string[]),
+    }
   }
 
   // fresh: ignore the cached notes (and an earlier failure) and ask the model again; the lyrics stay cached

@@ -218,6 +218,13 @@ describe('SongPreparer', () => {
     expect(e.f.mock.calls.filter((c) => String(c[0]).includes('lrclib.net'))).toHaveLength(1)
   })
 
+  it('old notes of a song without found lyrics never give an intro', async () => {
+    const e = await prepEnv()
+    expect(await e.prep.ensurePrepared(e.trackId, 'ru')).toBe('ready')
+    e.t.db.update(songLyrics).set({ status: 'not_found', lyrics: null }).run()
+    expect(e.prep.getNotes(e.trackId, 'ru')?.introText).toBeNull()
+  })
+
   it('shares one run between simultaneous callers', async () => {
     const e = await prepEnv()
     await Promise.all([e.prep.ensurePrepared(e.trackId, 'ru'), e.prep.ensurePrepared(e.trackId, 'ru')])
