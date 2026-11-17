@@ -15,7 +15,7 @@ enum PlaybackEvent: Equatable {
 
 enum PlaybackAction: Equatable {
     case none
-    /// Drop the current item but keep the audio session (interruption began).
+    /// Pause the current item but keep it and the audio session (interruption began).
     case stopItem
     /// Drop the item and deactivate the session.
     case stopAll

@@ -25,6 +25,9 @@ final class RadioPlayer: NSObject, ObservableObject {
     private var retryTask: Task<Void, Never>?
     private var watchdogTask: Task<Void, Never>?
     private var attempt = 0
+    /// Keeps the app running in the background while it reconnects, so retries are not frozen until it is opened.
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var startedAt: Date?
 
     override init() {
         super.init()
@@ -70,12 +73,16 @@ final class RadioPlayer: NSObject, ObservableObject {
         case .none:
             break
         case .stopItem:
+            // Pause only: dropping the item leaves the app silent, and iOS then suspends it,
+            // so the .ended notification and the retries would wait until the app is opened.
             cancelTimers()
-            teardownItem()
+            player.pause()
+            if wantsPlaying { holdBackground("interruption") }
         case .stopAll:
             cancelTimers()
             teardownItem()
             attempt = 0
+            releaseBackground()
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         case .startFresh:
             startFresh("\(event)")
@@ -92,12 +99,14 @@ final class RadioPlayer: NSObject, ObservableObject {
     private func startFresh(_ reason: String) {
         retryTask?.cancel()
         retryTask = nil
-        guard wantsPlaying, let base = streamURL else { return }
+        guard wantsPlaying, let base = streamURL else { releaseBackground(); return }
+        holdBackground(reason)
         do {
             try activateSession()
+            log.add("session active (\(reason))")
         } catch {
             log.add("session activation failed (\(reason)): \(error.localizedDescription)")
-            scheduleRetry("activation failed")
+            scheduleRetry("activation failed", quick: true)
             return
         }
         teardownItem()
@@ -128,6 +137,7 @@ final class RadioPlayer: NSObject, ObservableObject {
         trackTitle = nil
         player.replaceCurrentItem(with: newItem)
         player.play()
+        startedAt = Date()
         log.add("start fresh (\(reason)), host=\(base.host ?? "?"), attempt=\(attempt)")
     }
 
@@ -146,10 +156,11 @@ final class RadioPlayer: NSObject, ObservableObject {
         watchdogTask = nil
     }
 
-    private func scheduleRetry(_ reason: String) {
-        guard wantsPlaying else { return }
+    private func scheduleRetry(_ reason: String, quick: Bool = false) {
+        guard wantsPlaying else { releaseBackground(); return }
         retryTask?.cancel()
-        let delay = PlaybackPolicy.backoff(attempt: attempt)
+        // a phone call can hold the session for a moment after it ends: retry activation every 0.5-1 s first
+        let delay = quick && attempt < 8 ? (attempt < 2 ? 0.5 : 1.0) : PlaybackPolicy.backoff(attempt: attempt)
         attempt += 1
         log.add("retry in \(delay)s (\(reason))")
         retryTask = Task { [weak self] in
@@ -180,6 +191,23 @@ final class RadioPlayer: NSObject, ObservableObject {
         }
     }
 
+    private func holdBackground(_ reason: String) {
+        guard backgroundTask == .invalid else { return }
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "radio-reconnect") { [weak self] in
+            Task { @MainActor in
+                self?.log.add("background time expired")
+                self?.releaseBackground()
+            }
+        }
+        log.add("background hold (\(reason))")
+    }
+
+    private func releaseBackground() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
+
     private func activateSession() throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
@@ -192,7 +220,12 @@ final class RadioPlayer: NSObject, ObservableObject {
         watchdogTask?.cancel()
         watchdogTask = nil
         if status == .playing {
+            if let startedAt {
+                log.add(String(format: "playing after %.1fs", Date().timeIntervalSince(startedAt)))
+                self.startedAt = nil
+            }
             attempt = 0
+            releaseBackground()
         } else if status == .waitingToPlayAtSpecifiedRate && wantsPlaying {
             watchdogTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: Self.stuckWaitingSeconds * 1_000_000_000)
