@@ -269,6 +269,13 @@ function SourceSection({ r }: { r: Radio }) {
   const qc = useQueryClient()
   const src = r.station.source
   const [tab, setTab] = useState<Tab>(() => tabOf(src))
+  // the source changed elsewhere (another device, an agent): follow it to its tab
+  const srcTab = tabOf(src)
+  const [seenTab, setSeenTab] = useState(srcTab)
+  if (seenTab !== srcTab) {
+    setSeenTab(srcTab)
+    setTab(srcTab)
+  }
   const [pendingId, setPendingId] = useState<string | null>(null)
   const setSource = useSetSource()
   const folders = useQuery({
