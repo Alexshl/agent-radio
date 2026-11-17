@@ -17,7 +17,7 @@
 "remote.title" = "Пульт";
 "player.tab" = "Плеєр";
 "server.title" = "Сервер";
-"server.placeholder" = "music.fsm.lv";
+"server.placeholder" = "radio.example.com";
 "server.connect" = "Підключитися";
 "server.change" = "Сервер";
 "server.footer" = "Введіть домен. Далі увійдіть логіном і паролем на сторінці сайту — посилання на потік підтягнеться саме.";

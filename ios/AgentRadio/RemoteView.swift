@@ -56,12 +56,12 @@ struct RemoteView: View {
 private struct SignInView: View {
     @EnvironmentObject private var store: RemoteStore
     @State private var server = UserDefaults.standard.string(forKey: "server-host")
-        .flatMap(URL.init(string:))?.host ?? "music.fsm.lv"
+        .flatMap(URL.init(string:))?.host ?? "radio.example.com"
 
     var body: some View {
         Form {
             Section {
-                TextField(text: $server) { Text(verbatim: "music.fsm.lv") }
+                TextField(text: $server) { Text(verbatim: "radio.example.com") }
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
