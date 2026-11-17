@@ -14,3 +14,10 @@
 "log.title" = "Log";
 "log.copy" = "Copy log";
 "log.empty" = "No events yet";
+"remote.title" = "Remote";
+"player.tab" = "Player";
+"server.title" = "Server";
+"server.placeholder" = "radio.example.com";
+"server.connect" = "Connect";
+"server.change" = "Server";
+"server.footer" = "Enter the domain, then sign in on the site's page. The stream link is picked up automatically.";

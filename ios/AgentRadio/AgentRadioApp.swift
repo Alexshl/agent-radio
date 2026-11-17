@@ -6,8 +6,13 @@ struct AgentRadioApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(radio)
+            TabView {
+                RemoteView()
+                    .tabItem { Label("remote.title", systemImage: "slider.horizontal.3") }
+                ContentView()
+                    .tabItem { Label("player.tab", systemImage: "dot.radiowaves.left.and.right") }
+            }
+            .environmentObject(radio)
         }
     }
 }
