@@ -30,6 +30,7 @@ struct RemoteView: View {
     @EnvironmentObject private var radio: RadioPlayer
     @State private var origin: URL? = ServerSettings.host.flatMap(ServerSettings.origin(from:))
     @State private var input = ""
+    @State private var showLog = false
 
     var body: some View {
         NavigationStack {
@@ -39,7 +40,12 @@ struct RemoteView: View {
                         .ignoresSafeArea(edges: .bottom)
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
-                                Button("server.change") { self.origin = nil }
+                                Menu {
+                                    Button("log.title") { showLog = true }
+                                    Button("server.change") { self.origin = nil }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                }
                             }
                         }
                 } else {
@@ -63,6 +69,7 @@ struct RemoteView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showLog) { NavigationStack { LogView(log: radio.log) } }
             .navigationTitle(Text("remote.title"))
             .navigationBarTitleDisplayMode(.inline)
         }
