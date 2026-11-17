@@ -40,8 +40,9 @@ function errorOf(e: unknown) {
 }
 
 // opened by the iOS app: after sign-in hand the session over to it
-const APP_HANDOFF = '/api/auth/app-handoff'
-const fromApp = () => new URLSearchParams(window.location.search).get('app') === '1'
+const appParams = () => new URLSearchParams(window.location.search)
+const fromApp = () => appParams().get('app') === '1'
+const appHandoff = () => `/api/auth/app-handoff?cc=${encodeURIComponent(appParams().get('cc') ?? '')}`
 
 export function Login() {
   const { data: me, isLoading } = useMe()
@@ -54,7 +55,7 @@ export function Login() {
     onSuccess: (r) => {
       qc.clear()
       qc.setQueryData(['me'], r.user)
-      if (fromApp()) window.location.href = APP_HANDOFF
+      if (fromApp()) window.location.href = appHandoff()
       else nav('/')
     },
   })
@@ -69,13 +70,13 @@ export function Login() {
     onSuccess: (r) => {
       qc.clear()
       qc.setQueryData(['me'], r.user)
-      if (fromApp()) window.location.href = APP_HANDOFF
+      if (fromApp()) window.location.href = appHandoff()
       else nav('/')
     },
   })
   if (isLoading) return <Loading />
   if (me && fromApp()) {
-    window.location.href = APP_HANDOFF
+    window.location.href = appHandoff()
     return <Loading />
   }
   if (me) return <Navigate to="/" replace />
@@ -183,7 +184,7 @@ export function AcceptLink() {
     onSuccess: (r) => {
       qc.clear()
       qc.setQueryData(['me'], r.user)
-      if (fromApp()) window.location.href = APP_HANDOFF
+      if (fromApp()) window.location.href = appHandoff()
       else nav('/')
     },
   })

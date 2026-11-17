@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sessions } from './db/schema'
 import { PASSWORD, addUser, cookieOf, login, setup } from './test-utils'
 
@@ -187,24 +188,68 @@ describe('role guards', () => {
   })
 })
 
-describe('iOS app handoff', () => {
-  it('sends a signed-out browser to the login page in app mode', async () => {
-    const t = setup()
-    const res = await t.req('/api/auth/app-handoff')
-    expect(res.status).toBe(302)
-    expect(res.headers.get('location')).toBe('/login?app=1')
-  })
+describe('iOS app handoff (PKCE)', () => {
+  const verifier = 'v'.repeat(43)
+  const cc = createHash('sha256').update(verifier).digest('base64url')
 
-  it('hands a new working session to the app through its URL scheme', async () => {
-    const t = setup()
+  async function codeFor(t: ReturnType<typeof setup>) {
     await addUser(t, 'a@x.io')
     const cookie = await login(t, 'a@x.io')
-    const res = await t.req('/api/auth/app-handoff', { headers: { cookie } })
+    const res = await t.req(`/api/auth/app-handoff?cc=${cc}`, { cookie })
     expect(res.status).toBe(302)
+    expect(res.headers.get('set-cookie')).toBeNull()
+    expect(res.headers.get('cache-control')).toBe('no-store')
     const loc = res.headers.get('location') ?? ''
-    expect(loc).toMatch(/^agentradio:\/\/auth\?token=/)
-    const token = decodeURIComponent(loc.split('token=')[1])
-    const me = await t.req('/api/app/radio', { headers: { cookie: `ar_session=${token}` } })
-    expect(me.status).toBe(200)
+    expect(loc).toMatch(/^agentradio:\/\/auth\?code=/)
+    return decodeURIComponent(loc.split('code=')[1] ?? '')
+  }
+  const exchange = (t: ReturnType<typeof setup>, code: string, v = verifier) =>
+    t.req('/api/auth/app-token', { method: 'POST', json: { code, verifier: v } })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('rejects a handoff without a valid cc', async () => {
+    const t = setup()
+    expect((await t.req('/api/auth/app-handoff')).status).toBe(400)
+    expect((await t.req('/api/auth/app-handoff?cc=short')).status).toBe(400)
+  })
+
+  it('sends a signed-out browser to the login page with the challenge', async () => {
+    const t = setup()
+    const res = await t.req(`/api/auth/app-handoff?cc=${cc}`)
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe(`/login?app=1&cc=${cc}`)
+  })
+
+  it('trades code + verifier for a working session token, without setting a cookie', async () => {
+    const t = setup()
+    const code = await codeFor(t)
+    const res = await exchange(t, code)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('set-cookie')).toBeNull()
+    const { token } = (await res.json()) as { token: string }
+    expect((await t.req('/api/app/radio', { cookie: `ar_session=${token}` })).status).toBe(200)
+  })
+
+  it('accepts a code only once', async () => {
+    const t = setup()
+    const code = await codeFor(t)
+    expect((await exchange(t, code)).status).toBe(200)
+    expect((await exchange(t, code)).status).toBe(401)
+  })
+
+  it('burns the code on a wrong verifier', async () => {
+    const t = setup()
+    const code = await codeFor(t)
+    expect((await exchange(t, code, 'w'.repeat(43))).status).toBe(401)
+    expect((await exchange(t, code)).status).toBe(401)
+  })
+
+  it('rejects an expired code', async () => {
+    const t = setup()
+    const code = await codeFor(t)
+    const now = Date.now()
+    vi.spyOn(Date, 'now').mockReturnValue(now + 61_000)
+    expect((await exchange(t, code)).status).toBe(401)
   })
 })

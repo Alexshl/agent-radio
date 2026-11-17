@@ -1,4 +1,6 @@
 import AuthenticationServices
+import CryptoKit
+import Security
 import Foundation
 import UIKit
 
@@ -19,6 +21,7 @@ final class RemoteStore: NSObject, ObservableObject {
     private var pollTask: Task<Void, Never>?
     private weak var player: RadioPlayer?
     private var authSession: ASWebAuthenticationSession?
+    private var verifier: String?
 
     init(player: RadioPlayer) {
         self.player = player
@@ -53,7 +56,15 @@ final class RemoteStore: NSObject, ObservableObject {
         guard let url = Self.parseOrigin(raw) else { notice = "Невірна адреса сервера"; return }
         origin = url
         UserDefaults.standard.set(url.absoluteString, forKey: Self.originKey)
-        let start = url.appendingPathComponent("api/auth/app-handoff")
+        // PKCE: only this app, holding the verifier, can trade the code the site returns
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { return }
+        let v = Self.base64url(Data(bytes))
+        verifier = v
+        let cc = Self.base64url(Data(SHA256.hash(data: Data(v.utf8))))
+        var comps = URLComponents(url: url.appendingPathComponent("login"), resolvingAgainstBaseURL: false)!
+        comps.queryItems = [URLQueryItem(name: "app", value: "1"), URLQueryItem(name: "cc", value: cc)]
+        let start = comps.url!
         let session = ASWebAuthenticationSession(url: start, callbackURLScheme: "agentradio") { [weak self] callback, error in
             Task { @MainActor in self?.finishSignIn(callback, error) }
         }
@@ -65,19 +76,33 @@ final class RemoteStore: NSObject, ObservableObject {
     }
 
     private func finishSignIn(_ callback: URL?, _ error: Error?) {
-        signingIn = false
         authSession = nil
-        if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin { return }
-        guard let callback,
-              let token = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "token" })?.value, !token.isEmpty else {
+        if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin { signingIn = false; return }
+        guard let callback, let origin, let verifier,
+              let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "code" })?.value, !code.isEmpty else {
+            signingIn = false
             notice = "Вхід не вдався"
             return
         }
-        Keychain.save(token, account: Self.tokenAccount)
-        signedIn = true
-        player?.log.add("signed in, host=\(origin?.host ?? "?")")
-        start()
+        self.verifier = nil
+        Task {
+            defer { signingIn = false }
+            do {
+                let token = try await Api.exchange(origin: origin, code: code, verifier: verifier)
+                Keychain.save(token, account: Self.tokenAccount)
+                signedIn = true
+                player?.log.add("signed in, host=\(origin.host ?? "?")")
+                start()
+            } catch {
+                notice = "Вхід не вдався"
+            }
+        }
+    }
+
+    static func base64url(_ d: Data) -> String {
+        d.base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
 
     func signOut() {

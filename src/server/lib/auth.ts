@@ -23,6 +23,20 @@ export function isSecureRequest(c: Context, config: Config): boolean {
 
 // Creates the session and sets the cookie; returns the raw token.
 export async function startSession(db: Db, config: Config, c: Context, userId: string): Promise<string> {
+  const token = await createSession(db, config, c, userId)
+  const secure = isSecureRequest(c, config)
+  setCookie(c, cookieName(secure), token, {
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure,
+    path: '/',
+    maxAge: Math.floor(config.sessionTtlMs / 1000),
+  })
+  return token
+}
+
+// Creates the session row only (no cookie); returns the raw token. Used for the iOS app token exchange.
+export async function createSession(db: Db, config: Config, c: Context, userId: string): Promise<string> {
   const token = randomToken(32)
   const now = Date.now()
   db.insert(sessions)
@@ -40,14 +54,6 @@ export async function startSession(db: Db, config: Config, c: Context, userId: s
     .where(lt(sessions.expiresAt, new Date(now).toISOString()))
     .run()
   db.update(users).set({ lastLoginAt: nowIso() }).where(eq(users.id, userId)).run()
-  const secure = isSecureRequest(c, config)
-  setCookie(c, cookieName(secure), token, {
-    httpOnly: true,
-    sameSite: 'Lax',
-    secure,
-    path: '/',
-    maxAge: Math.floor(config.sessionTtlMs / 1000),
-  })
   return token
 }
 

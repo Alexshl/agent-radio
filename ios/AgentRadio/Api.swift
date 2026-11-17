@@ -110,6 +110,20 @@ struct Api {
         try JSONDecoder().decode(T.self, from: try await request("GET", path))
     }
 
+    /// Trades the one-time sign-in code + PKCE verifier for a session token.
+    static func exchange(origin: URL, code: String, verifier: String) async throws -> String {
+        struct B: Encodable { let code: String; let verifier: String }
+        struct R: Decodable { let token: String }
+        var req = URLRequest(url: origin.appendingPathComponent("api/auth/app-token"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(origin.absoluteString, forHTTPHeaderField: "Origin")
+        req.httpBody = try JSONEncoder().encode(B(code: code, verifier: verifier))
+        let (data, resp) = try await session.data(for: req)
+        guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw ApiError.unauthorized }
+        return try JSONDecoder().decode(R.self, from: data).token
+    }
+
     func radio() async throws -> RadioInfo { try await get("app/radio") }
     func live() async throws -> LiveInfo { try await get("app/live") }
     func folders() async throws -> FoldersInfo { try await get("app/library/folders") }
