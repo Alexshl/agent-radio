@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
@@ -5,7 +6,19 @@ import { z } from 'zod'
 import { passkeys, users } from '../db/schema'
 import type { FullDeps } from '../deps'
 import type { AppEnv } from '../env'
-import { clientIp, csrfGuard, dropUserSessions, endSession, isSecureRequest, requireSession, startSession } from '../lib/auth'
+import {
+  HOST_SESSION_COOKIE,
+  SESSION_COOKIE,
+  clientIp,
+  csrfGuard,
+  dropUserSessions,
+  endSession,
+  isSecureRequest,
+  requireSession,
+  startSession,
+  createSession,
+  userOfToken,
+} from '../lib/auth'
 import { HttpError, badRequest, notFound } from '../lib/http'
 import { base64urlDecode, newId, nowIso, randomToken } from '../lib/ids'
 import { acceptLink, findUsableLink } from '../lib/invites'
@@ -39,6 +52,17 @@ export function publicUser(u: typeof users.$inferSelect) {
   return { id: u.id, email: u.email, name: u.name, role: u.role, lang: u.lang }
 }
 
+const CC_RE = /^[A-Za-z0-9_-]{43}$/
+const APP_CODE_TTL_MS = 60_000
+const appTokenBody = z.object({ code: z.string().min(1).max(200), verifier: z.string().min(43).max(128) })
+// one-time codes for the iOS app handoff; short-lived, so process memory is enough
+const appCodes = new Map<string, { userId: string; cc: string; expiresAt: number }>()
+const sweepAppCodes = () => {
+  const now = Date.now()
+  for (const [k, v] of appCodes) if (v.expiresAt <= now) appCodes.delete(k)
+}
+const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
+
 export function authRoutes(deps: FullDeps) {
   const { db, config, authLimiter } = deps
   const r = new Hono<AppEnv>()
@@ -56,6 +80,39 @@ export function authRoutes(deps: FullDeps) {
     if (!user || !ok || user.disabledAt) throw new HttpError(401, 'invalid_credentials', 'Wrong email or password')
     await startSession(db, config, c, user.id)
     return c.json({ user: publicUser(user) })
+  })
+
+  // ---- native iOS app sign-in (PKCE). The app opens /login?app=1&cc=<base64url(SHA256(verifier))> in the system
+  // browser sheet (ASWebAuthenticationSession, passkeys work there). Signed in, the handoff issues a one-time code
+  // bound to the user and cc, never a session; the app trades code + verifier for a session token over JSON.
+  // POST from our own login page right after an interactive sign-in (never a GET a foreign page could trigger by a link)
+  r.post('/app-handoff', async (c) => {
+    const body = z.object({ cc: z.string() }).safeParse(await c.req.json().catch(() => null))
+    const cc = body.success ? body.data.cc : ''
+    if (!CC_RE.test(cc)) throw badRequest('invalid_challenge', 'Expected cc=base64url(SHA256(verifier))')
+    c.header('Cache-Control', 'no-store')
+    const current = getCookie(c, HOST_SESSION_COOKIE) ?? getCookie(c, SESSION_COOKIE)
+    const user = current ? await userOfToken(db, current) : null
+    if (!user) throw new HttpError(401, 'unauthorized', 'Sign in first')
+    const code = randomToken(32)
+    sweepAppCodes()
+    appCodes.set(code, { userId: user.id, cc, expiresAt: Date.now() + APP_CODE_TTL_MS })
+    return c.json({ url: `agentradio://auth?code=${encodeURIComponent(code)}` })
+  })
+
+  r.post('/app-token', async (c) => {
+    const body = appTokenBody.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw badRequest('invalid_body', 'Expected {code, verifier}')
+    const { code, verifier } = body.data
+    authLimiter.check(`${clientIp(c, config)}|app-token`)
+    const entry = appCodes.get(code)
+    appCodes.delete(code) // single use, even when the check below fails
+    const ok = !!entry && entry.expiresAt > Date.now() && safeEqual(createHash('sha256').update(verifier).digest('base64url'), entry.cc)
+    const user = ok ? db.select().from(users).where(eq(users.id, entry.userId)).get() : null
+    if (!user || user.disabledAt) throw new HttpError(401, 'invalid_code', 'Invalid or expired code')
+    const token = await createSession(db, config, c, user.id)
+    c.header('Cache-Control', 'no-store')
+    return c.json({ token })
   })
 
   // ---- passkey sign-in (no session yet): the challenge belongs to the cookie of this attempt ----

@@ -14,3 +14,10 @@
 "log.title" = "Журнал";
 "log.copy" = "Копіювати журнал";
 "log.empty" = "Подій ще немає";
+"remote.title" = "Пульт";
+"player.tab" = "Плеєр";
+"server.title" = "Сервер";
+"server.placeholder" = "music.fsm.lv";
+"server.connect" = "Підключитися";
+"server.change" = "Сервер";
+"server.footer" = "Введіть домен. Далі увійдіть логіном і паролем на сторінці сайту — посилання на потік підтягнеться саме.";

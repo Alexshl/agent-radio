@@ -39,6 +39,15 @@ function errorOf(e: unknown) {
   return e instanceof ApiError ? errorText(e.code, e.message) : S.common.error
 }
 
+// opened by the iOS app: after sign-in hand the session over to it
+const appParams = () => new URLSearchParams(window.location.search)
+const fromApp = () => appParams().get('app') === '1'
+// the one-time code goes to the app only after a sign-in on this page (a foreign link alone never hands it over)
+const appHandoff = async () => {
+  const r = await post<{ url: string }>('/auth/app-handoff', { cc: appParams().get('cc') ?? '' })
+  window.location.href = r.url
+}
+
 export function Login() {
   const { data: me, isLoading } = useMe()
   const qc = useQueryClient()
@@ -50,7 +59,8 @@ export function Login() {
     onSuccess: (r) => {
       qc.clear()
       qc.setQueryData(['me'], r.user)
-      nav('/')
+      if (fromApp()) void appHandoff()
+      else nav('/')
     },
   })
   // usernameless sign-in: the browser offers the passkeys it holds for this site
@@ -64,11 +74,13 @@ export function Login() {
     onSuccess: (r) => {
       qc.clear()
       qc.setQueryData(['me'], r.user)
-      nav('/')
+      if (fromApp()) void appHandoff()
+      else nav('/')
     },
   })
   if (isLoading) return <Loading />
-  if (me) return <Navigate to="/" replace />
+  // the app asks for a sign-in: show the form even with a session here, so the handoff always follows a deliberate sign-in
+  if (me && !fromApp()) return <Navigate to="/" replace />
   const submit = (e: FormEvent) => {
     e.preventDefault()
     login.mutate()
@@ -173,7 +185,8 @@ export function AcceptLink() {
     onSuccess: (r) => {
       qc.clear()
       qc.setQueryData(['me'], r.user)
-      nav('/')
+      if (fromApp()) void appHandoff()
+      else nav('/')
     },
   })
   if (info.isLoading) return <Loading />
