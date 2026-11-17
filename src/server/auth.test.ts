@@ -186,3 +186,25 @@ describe('role guards', () => {
     expect((await t.req(`/api/admin/users/${user.id}`, { method: 'PATCH', cookie, json: { disabled: true } })).status).toBe(400)
   })
 })
+
+describe('iOS app handoff', () => {
+  it('sends a signed-out browser to the login page in app mode', async () => {
+    const t = setup()
+    const res = await t.req('/api/auth/app-handoff')
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('/login?app=1')
+  })
+
+  it('hands a new working session to the app through its URL scheme', async () => {
+    const t = setup()
+    await addUser(t, 'a@x.io')
+    const cookie = await login(t, 'a@x.io')
+    const res = await t.req('/api/auth/app-handoff', { headers: { cookie } })
+    expect(res.status).toBe(302)
+    const loc = res.headers.get('location') ?? ''
+    expect(loc).toMatch(/^agentradio:\/\/auth\?token=/)
+    const token = decodeURIComponent(loc.split('token=')[1])
+    const me = await t.req('/api/app/radio', { headers: { cookie: `ar_session=${token}` } })
+    expect(me.status).toBe(200)
+  })
+})

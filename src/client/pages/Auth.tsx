@@ -39,6 +39,10 @@ function errorOf(e: unknown) {
   return e instanceof ApiError ? errorText(e.code, e.message) : S.common.error
 }
 
+// opened by the iOS app: after sign-in hand the session over to it
+const APP_HANDOFF = '/api/auth/app-handoff'
+const fromApp = () => new URLSearchParams(window.location.search).get('app') === '1'
+
 export function Login() {
   const { data: me, isLoading } = useMe()
   const qc = useQueryClient()
@@ -50,7 +54,8 @@ export function Login() {
     onSuccess: (r) => {
       qc.clear()
       qc.setQueryData(['me'], r.user)
-      nav('/')
+      if (fromApp()) window.location.href = APP_HANDOFF
+      else nav('/')
     },
   })
   // usernameless sign-in: the browser offers the passkeys it holds for this site
@@ -64,10 +69,15 @@ export function Login() {
     onSuccess: (r) => {
       qc.clear()
       qc.setQueryData(['me'], r.user)
-      nav('/')
+      if (fromApp()) window.location.href = APP_HANDOFF
+      else nav('/')
     },
   })
   if (isLoading) return <Loading />
+  if (me && fromApp()) {
+    window.location.href = APP_HANDOFF
+    return <Loading />
+  }
   if (me) return <Navigate to="/" replace />
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -173,7 +183,8 @@ export function AcceptLink() {
     onSuccess: (r) => {
       qc.clear()
       qc.setQueryData(['me'], r.user)
-      nav('/')
+      if (fromApp()) window.location.href = APP_HANDOFF
+      else nav('/')
     },
   })
   if (info.isLoading) return <Loading />

@@ -5,7 +5,18 @@ import { z } from 'zod'
 import { passkeys, users } from '../db/schema'
 import type { FullDeps } from '../deps'
 import type { AppEnv } from '../env'
-import { clientIp, csrfGuard, dropUserSessions, endSession, isSecureRequest, requireSession, startSession } from '../lib/auth'
+import {
+  HOST_SESSION_COOKIE,
+  SESSION_COOKIE,
+  clientIp,
+  csrfGuard,
+  dropUserSessions,
+  endSession,
+  isSecureRequest,
+  requireSession,
+  startSession,
+  userOfToken,
+} from '../lib/auth'
 import { HttpError, badRequest, notFound } from '../lib/http'
 import { base64urlDecode, newId, nowIso, randomToken } from '../lib/ids'
 import { acceptLink, findUsableLink } from '../lib/invites'
@@ -55,6 +66,18 @@ export function authRoutes(deps: FullDeps) {
     if (!user || !ok || user.disabledAt) throw new HttpError(401, 'invalid_credentials', 'Wrong email or password')
     await startSession(db, config, c, user.id)
     return c.json({ user: publicUser(user) })
+  })
+
+  // ---- native iOS app sign-in: opened in the system browser sheet (ASWebAuthenticationSession), where passkeys work.
+  // Signed in: a separate session is created for the app and handed over through its fixed URL scheme.
+  // Not signed in: the login page (?app=1) comes back here after a password or passkey sign-in.
+  r.get('/app-handoff', async (c) => {
+    const current = getCookie(c, HOST_SESSION_COOKIE) ?? getCookie(c, SESSION_COOKIE)
+    const user = current ? await userOfToken(db, current) : null
+    if (!user) return c.redirect('/login?app=1')
+    const token = await startSession(db, config, c, user.id)
+    c.header('Cache-Control', 'no-store')
+    return c.redirect(`agentradio://auth?token=${encodeURIComponent(token)}`)
   })
 
   // ---- passkey sign-in (no session yet): the challenge belongs to the cookie of this attempt ----
