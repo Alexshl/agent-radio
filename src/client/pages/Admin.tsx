@@ -314,6 +314,7 @@ interface TtsData {
     enabled: boolean
     providerConfigured: boolean
     isDefault: boolean
+    engineOn?: boolean
   }[]
   defaultVoice: string
 }
@@ -953,6 +954,11 @@ function PiperCard() {
   )
 }
 
+// 'Piper', 'Gemini', ... ; a local voice shows its engine ('local:silero/xenia' -> 'Silero')
+const cap1 = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const voiceSource = (v: { provider: string; key: string }) =>
+  v.provider === 'local' ? cap1(v.key.slice('local:'.length).split('/')[0] ?? 'local') : cap1(v.provider)
+
 function TtsTab() {
   const qc = useQueryClient()
   const fail = useErrorToast()
@@ -999,12 +1005,12 @@ function TtsTab() {
           <div className="card-h">{S.admin.tts.voices}</div>
           <div className="card-b stack" style={{ gap: 12 }}>
             {q.data.voices
-              .filter((v) => !v.id.includes('#') && v.provider !== 'local')
+              .filter((v) => !v.id.includes('#') && (v.provider !== 'local' || v.engineOn))
               .map((v) => (
                 <div className="row between" style={{ gap: 12 }} key={v.key}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 550 }}>
-                      {v.label} · {v.provider.charAt(0).toUpperCase() + v.provider.slice(1)}
+                      {v.label} · {voiceSource(v)}
                       {LANG_TAG[v.lang] ? ` · ${LANG_TAG[v.lang]}` : ''}
                     </div>
                     {v.isDefault ? (

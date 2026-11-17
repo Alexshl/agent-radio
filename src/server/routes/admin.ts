@@ -210,6 +210,8 @@ export function adminRoutes(deps: FullDeps) {
         enabled: registry.voiceEnabled(v.key),
         providerConfigured: registry.isConfigured(v.provider),
         isDefault: v.key === defaultVoice,
+        // a local voice is listed only while its engine is switched on (the engine switch lives in the local voices card)
+        engineOn: v.provider === 'local' ? registry.voiceEnabled(v.key.split('/')[0] ?? v.key) : undefined,
       })),
       defaultVoice,
     })
