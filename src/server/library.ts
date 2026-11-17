@@ -50,6 +50,9 @@ export interface FolderNode {
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`)
 
+// a file changed less than this long ago is left for the next scan (it may still be growing)
+export const FRESH_MS = 60_000
+
 export class Library {
   scanning = false
   last: ScanResult | null = null
@@ -60,6 +63,7 @@ export class Library {
     private db: Db,
     private config: Config,
     private read: TagReader = readTags,
+    private freshMs = FRESH_MS,
   ) {}
 
   // Rescans the library. Returns null when a scan is already running.
@@ -95,6 +99,8 @@ export class Library {
         }
         const old = existing.get(rel)
         const mtimeMs = Math.floor(st.mtimeMs)
+        // still being copied in (a network share, a download): picked up by a later scan, an indexed version stays as is
+        if (this.freshMs > 0 && Date.now() - mtimeMs < this.freshMs) continue
         if (old && old.mtimeMs === mtimeMs && old.size === st.size) continue
         const tags = await this.read(f)
         const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''

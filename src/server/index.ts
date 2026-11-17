@@ -42,14 +42,15 @@ setInterval(
   2_000,
 ).unref()
 
-// the music library: scan on start and then every hour (incremental: unchanged files are skipped); retention cleanup every hour
+// the music library: scan on start and then every 2 minutes, so files copied into the folder (a network share) show up by themselves
+// (incremental: unchanged files are skipped); retention cleanup every hour
 const scan = () =>
   deps.library
     .scan()
     .then((r) => r && console.log(`library scan: +${r.added} ~${r.updated} -${r.removed}, ${r.total} tracks`))
     .catch((e) => console.error('library scan failed:', e instanceof Error ? e.message : e))
 void scan()
-setInterval(scan, 3600_000).unref()
+setInterval(scan, 120_000).unref()
 const clean = () => {
   try {
     const r = cleanup(deps.db, config)

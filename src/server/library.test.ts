@@ -1,6 +1,7 @@
 import { mkdirSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { Library } from './library'
 import { resolveInside, writeTrackList } from './music'
 import { addUser, login, setup } from './test-utils'
 import type { T } from './test-utils'
@@ -16,6 +17,15 @@ function seedMusic(t: T) {
 }
 
 describe('library scan', () => {
+  it('leaves a file that is still being copied in for a later scan', async () => {
+    const t = setup()
+    const lib = new Library(t.db, t.config, async () => ({ title: 't', artist: 'a', album: 'b', durationSec: 1 }), 60_000)
+    writeFileSync(join(t.music, 'fresh.mp3'), 'x')
+    expect(await lib.scan()).toMatchObject({ added: 0, total: 0 })
+    utimesSync(join(t.music, 'fresh.mp3'), new Date(), new Date(Date.now() - 120_000))
+    expect(await lib.scan()).toMatchObject({ added: 1, total: 1 })
+  })
+
   it('indexes audio files recursively, incrementally, and drops the removed ones', async () => {
     const t = setup()
     seedMusic(t)

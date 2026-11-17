@@ -88,12 +88,17 @@ export function setup(opts: { listeners?: number | null; env?: Record<string, st
       writeFileSync(p.out, 'mp3-bytes')
     }),
   } satisfies MediaTools
-  const library = new Library(db, config, async (file) => ({
-    title: file.split('/').pop() ?? file,
-    artist: 'Artist',
-    album: 'Album',
-    durationSec: 100,
-  }))
+  const library = new Library(
+    db,
+    config,
+    async (file) => ({
+      title: file.split('/').pop() ?? file,
+      artist: 'Artist',
+      album: 'Album',
+      durationSec: 100,
+    }),
+    0,
+  )
   const registry = new TtsRegistry(db, config, new SecretStore(db, () => 'test-secret'))
   const deps: Deps = {
     db,
