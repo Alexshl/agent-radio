@@ -36,6 +36,9 @@ input[type="range"] {
 }
 select.inp {
   appearance: auto;
+  /* a long option (a folder name) must not widen the page on a phone */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .ar-shell {

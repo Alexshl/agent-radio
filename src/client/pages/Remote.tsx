@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  BookOpen,
   FolderOpen,
   ListMusic,
   Loader2,
@@ -19,7 +20,7 @@ import { get, patch, post } from '../api/client'
 import { useLive, useRadio } from '../api/hooks'
 import type { Live, Radio, ReplayResult, Source } from '../api/types'
 import { LIVE_KEY, usePlayer } from '../components/Player'
-import { ErrorBox, Loading, Seg, useErrorToast } from '../components/ui'
+import { ErrorBox, Loading, Seg, Switch, useErrorToast } from '../components/ui'
 import { S } from '../i18n'
 import { Shell } from '../layouts/Shell'
 import { fmtTime } from '../lib/format'
@@ -397,6 +398,36 @@ function SourceSection({ r }: { r: Radio }) {
   )
 }
 
+// quick "learn a language" switch (the frequency and the rest stay in the radio settings)
+function LearnQuick({ r }: { r: Radio }) {
+  const qc = useQueryClient()
+  const fail = useErrorToast()
+  const l = r.learn
+  const save = useMutation({
+    mutationFn: (learnMode: boolean) => patch('/app/settings', { learnMode }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['radio'] }),
+    onError: fail,
+  })
+  const blocked = !l.mode && (!l.available || !l.configured)
+  const hint = !l.mode && !l.available ? S.learn.needPlaylist : !l.mode && !l.configured ? S.learn.noModel : null
+  return (
+    <section className="card">
+      <div className="card-b row" style={{ gap: 12, alignItems: 'center' }}>
+        <BookOpen size={20} aria-hidden="true" style={{ flex: 'none', color: 'var(--brand-primary)' }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>{S.learn.title}</div>
+          {hint && (
+            <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.45, marginTop: 2 }}>
+              {hint}
+            </div>
+          )}
+        </div>
+        <Switch on={l.mode} disabled={blocked || save.isPending} label={S.learn.title} onChange={(v) => save.mutate(v)} />
+      </div>
+    </section>
+  )
+}
+
 export function Remote() {
   const radio = useRadio(10_000)
   const live = useLive(radio.isSuccess)
@@ -419,6 +450,7 @@ export function Remote() {
           </header>
           <div className="rc-col-left">
             <NowCard r={r} live={live.data} />
+            <LearnQuick r={r} />
             <ReplaySection r={r} />
           </div>
           <div className="rc-col-right">
