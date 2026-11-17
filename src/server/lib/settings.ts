@@ -15,6 +15,8 @@ export const DEFAULTS = {
   // quota of the files one user uploaded, MB (2 GB); the admin has none
   uploadQuotaMb: 2048,
   defaultVoice: null as string | null,
+  // per summary language ('ru' -> 'local:silero/xenia'); before defaultVoice, which stays for languages without their own
+  defaultVoiceByLang: {} as Record<string, string>,
   // mix levels (dB) given to newly created stations
   defaultMusicGainDb: 0,
   defaultVoiceGainDb: 0,

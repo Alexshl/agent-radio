@@ -151,6 +151,8 @@ export class TtsRegistry {
   }
 
   defaultVoiceKey(lang: string): string {
+    const own = getSetting(this.db, 'defaultVoiceByLang')[lang]
+    if (own && this.available(own)) return own
     const configured = getSetting(this.db, 'defaultVoice')
     if (configured && this.available(configured)) return configured
     const env = this.config.ttsVoice

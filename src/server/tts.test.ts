@@ -250,6 +250,19 @@ describe('/api/say with the cloud fallback (route level)', () => {
     expect(registry.piperVoices().some((v) => v.lang === 'lv')).toBe(true)
   })
 
+  it('a per-language default voice wins over the global one for its language only', async () => {
+    const { registry, db } = service()
+    const { setSetting } = await import('./lib/settings')
+    const key = (l: string) => registry.piperVoices().find((v) => v.lang === l)?.key ?? ''
+    const ru = key('ru')
+    const uk = key('uk')
+    setSetting(db, 'defaultVoice', uk)
+    setSetting(db, 'defaultVoiceByLang', { ru })
+    expect(registry.defaultVoiceKey('ru')).toBe(ru)
+    expect(registry.defaultVoiceKey('uk')).toBe(uk)
+    expect(registry.defaultVoiceKey('de')).toBe(uk)
+  })
+
   it('speakSession off: the text as is', async () => {
     const t = setup({ listeners: 1 })
     const { token } = await (await import('./test-utils')).userWithKey(t, 'a@x.io')

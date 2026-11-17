@@ -811,7 +811,10 @@ function MobileRadio({ r, live, narrow }: { r: Radio; live?: Live; narrow: boole
         >
           <Settings2 size={18} aria-hidden="true" />
         </button>
-        <span className={`bdg${listening ? ' t-success' : ''}`} style={{ maxWidth: 'calc(100% - 100px)', whiteSpace: 'normal', borderRadius: 14, textAlign: 'left' }}>
+        <span
+          className={`bdg${listening ? ' t-success' : ''}`}
+          style={{ maxWidth: 'calc(100% - 100px)', whiteSpace: 'normal', borderRadius: 14, textAlign: 'left' }}
+        >
           {listening ? S.radio.youListen : S.radio.stopped}
         </span>
         <button

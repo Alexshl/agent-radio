@@ -196,7 +196,8 @@ export function adminRoutes(deps: FullDeps) {
   // ---- TTS ----
 
   r.get('/tts', (c) => {
-    const defaultVoice = registry.defaultVoiceKey('uk')
+    const defaultVoice = getSetting(db, 'defaultVoice') ?? registry.defaultVoiceKey('uk')
+    const byLang = getSetting(db, 'defaultVoiceByLang')
     return c.json({
       providers: PROVIDER_IDS.filter((id) => id !== 'local').map((id) => ({
         id,
@@ -209,11 +210,13 @@ export function adminRoutes(deps: FullDeps) {
         ...v,
         enabled: registry.voiceEnabled(v.key),
         providerConfigured: registry.isConfigured(v.provider),
-        isDefault: v.key === defaultVoice,
+        // a voice of one language is the default of that language; a multilingual one of the languages without their own
+        isDefault: v.lang !== 'multi' ? byLang[v.lang] === v.key : v.key === defaultVoice,
         // a local voice is listed only while its engine is switched on (the engine switch lives in the local voices card)
         engineOn: v.provider === 'local' ? registry.voiceEnabled(v.key.split('/')[0] ?? v.key) : undefined,
       })),
       defaultVoice,
+      defaultVoiceByLang: byLang,
     })
   })
 
@@ -453,8 +456,10 @@ export function adminRoutes(deps: FullDeps) {
   r.put('/tts/default', async (c) => {
     const body = z.object({ voice: z.string().max(200).nullable() }).safeParse(await c.req.json().catch(() => null))
     if (!body.success) throw badRequest('invalid_body')
-    if (body.data.voice && !registry.findVoice(body.data.voice)) throw notFound('Unknown voice')
-    setSetting(db, 'defaultVoice', body.data.voice)
+    const v = body.data.voice ? registry.findVoice(body.data.voice) : null
+    if (body.data.voice && !v) throw notFound('Unknown voice')
+    if (v && v.lang !== 'multi') setSetting(db, 'defaultVoiceByLang', { ...getSetting(db, 'defaultVoiceByLang'), [v.lang]: v.key })
+    else setSetting(db, 'defaultVoice', body.data.voice)
     return c.json({ ok: true })
   })
 
