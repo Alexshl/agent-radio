@@ -237,7 +237,13 @@ export class PlayerController {
       }
       this.set({ playing: false })
     })
-    on('waiting', () => this.state.current && this.set({ loading: true }))
+    on('waiting', () => {
+      if (!this.state.current) return
+      this.set({ loading: true })
+      // Chrome on a long-running stream: 'waiting' + 'stalled' while the element is still "playing", then it retries the connection on its
+      // own with Range requests for minutes (icecast cannot serve them), so the music stops. A live stream waiting too long is re-opened.
+      this.armStall()
+    })
     on('ended', () => {
       const cur = this.state.current
       if (!cur) return
@@ -253,13 +259,7 @@ export class PlayerController {
       this.onError?.(cur)
     })
     // a stream that stalls and does not recover by itself
-    on('stalled', () => {
-      if (this.state.current?.kind !== 'live' || this.stallTimer || this.state.reconnecting) return
-      this.stallTimer = this.timers.set(() => {
-        this.stallTimer = null
-        if (this.state.current?.kind === 'live' && !this.state.playing) this.dropped()
-      }, STALL_GRACE_MS)
-    })
+    on('stalled', () => this.armStall())
     on('timeupdate', () => {
       if (this.stallTimer) {
         this.timers.clear(this.stallTimer)
@@ -356,6 +356,16 @@ export class PlayerController {
     if (this.edgeTimer) this.timers.clear(this.edgeTimer)
     this.edgeTimer = null
     this.endInterruption()
+  }
+
+  // A live stream that shows no progress for STALL_GRACE_MS after 'waiting' / 'stalled' (no 'timeupdate' / 'playing' in between) is broken.
+  private armStall() {
+    if (this.state.current?.kind !== 'live' || this.stallTimer || this.state.reconnecting) return
+    this.stallTimer = this.timers.set(() => {
+      this.stallTimer = null
+      if (this.state.current?.kind !== 'live') return
+      if (!this.state.playing || this.state.loading) this.dropped()
+    }, STALL_GRACE_MS)
   }
 
   // seconds the live audio is behind the end of what the browser has downloaded

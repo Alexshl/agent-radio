@@ -326,6 +326,37 @@ describe('PlayerController', () => {
       expect(t.next()).toBe(8000)
       expect(t.ctl.getState().reconnecting).toBe(true)
     })
+
+    it('a playing live stream stuck in waiting (Chrome retrying by itself) is re-opened; a short wait is not', async () => {
+      const { ctl, audio, next } = makeTimed()
+      ctl.toggle(live)
+      await tick()
+      audio.emit('playing')
+      expect(ctl.getState()).toMatchObject({ playing: true, loading: false })
+      // runs timers for about `ms` of fake time (the live-edge watcher ticks every 2 s)
+      const runFor = (ms: number) => {
+        let t = 0
+        while (t < ms) {
+          const d = next()
+          if (d === null) break
+          t += d
+        }
+      }
+      // short buffering: progress resumes before the grace ends
+      audio.emit('waiting')
+      runFor(4000)
+      audio.emit('timeupdate')
+      audio.emit('playing')
+      runFor(10_000)
+      expect(ctl.getState().reconnecting).toBe(false)
+      // stuck: 'waiting' + 'stalled' while the element still counts as playing
+      audio.emit('waiting')
+      audio.emit('stalled')
+      runFor(6000)
+      expect(ctl.getState().reconnecting).toBe(false)
+      runFor(2000)
+      expect(ctl.getState().reconnecting).toBe(true)
+    })
   })
 
   it('seeks files only, within the duration', async () => {
