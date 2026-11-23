@@ -20,7 +20,7 @@ targets:
         # PLACEHOLDER bundle id: must be unique for your Apple ID.
         PRODUCT_BUNDLE_IDENTIFIER: com.example.agentradio.app
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         # DEVELOPMENT_TEAM is set in Xcode (Signing & Capabilities).
     info:
       path: AgentRadio/Info.plist
@@ -31,6 +31,7 @@ targets:
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSAppTransportSecurity:
           # Lets AVPlayer stream from plain http hosts too (https works without it).
           NSAllowsArbitraryLoadsForMedia: true

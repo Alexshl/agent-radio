@@ -38,12 +38,30 @@ struct RemoteView: View {
         }
     }
 
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    @ViewBuilder
     private var remote: some View {
-        List {
-            NowSection()
-            LevelsSection()
-            ReplaySection()
-            SourcesSection()
+        Group {
+            if sizeClass == .regular {
+                // iPad / wide window: player, levels and replay on the left, sources on the right
+                HStack(alignment: .top, spacing: 0) {
+                    List {
+                        NowSection()
+                        LevelsSection()
+                        ReplaySection()
+                    }
+                    .frame(maxWidth: 520)
+                    List { SourcesSection() }
+                }
+            } else {
+                List {
+                    NowSection()
+                    LevelsSection()
+                    ReplaySection()
+                    SourcesSection()
+                }
+            }
         }
         .listStyle(.insetGrouped)
         .refreshable { await store.refresh() }
@@ -56,7 +74,7 @@ struct RemoteView: View {
 private struct SignInView: View {
     @EnvironmentObject private var store: RemoteStore
     @State private var server = UserDefaults.standard.string(forKey: "server-host")
-        .flatMap(URL.init(string:))?.host ?? "radio.example.com"
+        .flatMap(URL.init(string:))?.host ?? ""
 
     var body: some View {
         Form {
@@ -84,6 +102,8 @@ private struct SignInView: View {
                 .disabled(RemoteStore.parseOrigin(server) == nil || store.signingIn)
             }
         }
+        .frame(maxWidth: 560)
+        .frame(maxWidth: .infinity)
     }
 }
 
