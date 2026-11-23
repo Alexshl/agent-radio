@@ -242,6 +242,8 @@ export const et: Strings = {
     chimeHint: 'Lühike kaksikheli',
     speakSession: 'Nimeta seanss',
     speakSessionHint: '„Seanss invoa. …”',
+    translateMessages: 'Tõlgi sõnumid',
+    translateMessagesHint: 'Teises keeles tekst tõlgitakse enne ettelugemist raadio keelde',
     testSend: 'Saada test eetrisse',
     testAired: 'Test kõlas eetris',
     testWaiting: 'Kuulaja ühendub uuesti — test kõlab kohe, kui ta tagasi on',

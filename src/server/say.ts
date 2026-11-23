@@ -8,6 +8,7 @@ import { newId, nowIso } from './lib/ids'
 import { getSetting } from './lib/settings'
 import { emitLive } from './live'
 import type { StationRow } from './stations'
+import { translateForSpeech } from './translate'
 
 type UserRow = typeof users.$inferSelect
 
@@ -70,19 +71,25 @@ export async function airMessage(
     return { id: base.id, status: 'skipped', listeners }
   }
   const release = deps.userLock.acquire(user.id)
-  const synth = tts.makeClip({
-    text: spokenText(user, session, text),
-    voice: user.voice,
-    lang: user.lang,
-    chime: st.chime,
-    rate: user.speechRate,
-    userId: user.id,
-  })
+  // translation (a text in another language than the user's) then the voice; both count into the sayWaitMs wait
+  const synth = (async () => {
+    const translated = user.translateMessages ? await translateForSpeech(deps, text, user.lang) : null
+    const clip = await tts.makeClip({
+      text: spokenText(user, session, translated ?? text),
+      voice: user.voice,
+      lang: user.lang,
+      chime: st.chime,
+      rate: user.speechRate,
+      userId: user.id,
+    })
+    return { clip, spoken: translated }
+  })()
   let timer: ReturnType<typeof setTimeout> | undefined
   const slow = new Promise<'slow'>((resolve) => {
     timer = setTimeout(() => resolve('slow'), config.sayWaitMs)
   })
   let clip: string
+  let spoken: string | null
   try {
     const first = await Promise.race([synth, slow])
     clearTimeout(timer)
@@ -94,7 +101,8 @@ export async function airMessage(
       void finishQueued(deps, base.id, st.id, synth).finally(release)
       return { id: base.id, status: 'queued', listeners }
     }
-    clip = first
+    clip = first.clip
+    spoken = first.spoken
   } catch (e) {
     clearTimeout(timer)
     console.error('say failed:', e instanceof Error ? e.message : e)
@@ -106,7 +114,7 @@ export async function airMessage(
     throw new HttpError(502, 'tts_failed', 'Could not synthesize or play the message')
   }
   db.insert(messages)
-    .values({ ...base, status: 'waiting', clipPath: clip, clipCreatedAt: nowIso() })
+    .values({ ...base, status: 'waiting', clipPath: clip, spokenText: spoken, clipCreatedAt: nowIso() })
     .run()
   emitLive(user.id, 'messages')
   try {
@@ -122,11 +130,11 @@ export async function airMessage(
 }
 
 // The clip of a queued message is ready (or failed): air it when somebody listens (or hold it for a reconnecting listener).
-async function finishQueued(deps: FullDeps, id: string, stationId: string, synth: Promise<string>) {
+async function finishQueued(deps: FullDeps, id: string, stationId: string, synth: Promise<{ clip: string; spoken: string | null }>) {
   const { db, delivery } = deps
   try {
-    const clip = await synth
-    patchMessage(db, id, { status: 'waiting', clipPath: clip, clipCreatedAt: nowIso() })
+    const { clip, spoken } = await synth
+    patchMessage(db, id, { status: 'waiting', clipPath: clip, spokenText: spoken, clipCreatedAt: nowIso() })
     await delivery.offer(id, stationId)
   } catch (e) {
     console.error('queued say failed:', e instanceof Error ? e.message : e)

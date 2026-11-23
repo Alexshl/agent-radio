@@ -239,6 +239,8 @@ export const uk: Strings = {
     chimeHint: 'Короткий подвійний тон',
     speakSession: 'Називати сесію',
     speakSessionHint: '«Сесія invoa. …»',
+    translateMessages: 'Перекладати повідомлення',
+    translateMessagesHint: 'Текст іншою мовою перекладається мовою радіо перед озвучуванням',
     testSend: 'Надіслати тест в ефір',
     testAired: 'Тест прозвучав в ефірі',
     testWaiting: 'Слухач перепідключається — тест прозвучить, щойно він повернеться',

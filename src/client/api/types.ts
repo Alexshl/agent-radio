@@ -37,6 +37,7 @@ export interface HistoryMessage {
   session: string
   host: string | null
   text: string
+  spokenText?: string | null
   status: 'aired' | 'skipped' | 'failed' | 'queued' | 'waiting' | 'onair' | 'playing'
   type: 'voice' | 'audio'
   durationSec: number | null
@@ -58,7 +59,7 @@ export interface Radio {
     m3uUrl: string
     webStreamPath: string
   }
-  settings: { voice: string | null; lang: string; speakSession: boolean; speechRate: number }
+  settings: { voice: string | null; lang: string; speakSession: boolean; translateMessages: boolean; speechRate: number }
   learn: LearnSettings
   allowOwnUrls: boolean
   defaultVoice: string

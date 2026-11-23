@@ -21,6 +21,8 @@ export const users = sqliteTable(
     // summary language the agent writes in: uk | ru | en | lv | et | lt | de | sv (SUMMARY_LANGS in server/lang.ts)
     lang: text('lang').notNull().default('uk'),
     speakSession: integer('speak_session', { mode: 'boolean' }).notNull().default(true),
+    // a message in another language than `lang` is translated into it before the voice reads it
+    translateMessages: integer('translate_messages', { mode: 'boolean' }).notNull().default(true),
     // speech rate multiplier 0.8..1.6
     speechRate: real('speech_rate').notNull().default(1),
     // "Learn language" mode: the app queues the songs of the user's playlist itself and says who sings before some of them.
@@ -90,6 +92,8 @@ export const messages = sqliteTable(
     session: text('session').notNull(),
     host: text('host'),
     text: text('text').notNull(),
+    // the translation into the user's language that was actually spoken (`text` keeps the original); null = spoken as is
+    spokenText: text('spoken_text'),
     // waiting (held until a listener reconnects) | queued (slow voice still synthesizing) | onair (pushed to the engine, not started yet) |
     // playing | aired (= played to the end) | skipped | failed
     status: text('status').notNull(),

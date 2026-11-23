@@ -242,6 +242,8 @@ export const lt: Strings = {
     chimeHint: 'Trumpas dvigubas tonas',
     speakSession: 'Įvardyti sesiją',
     speakSessionHint: '„Sesija invoa. …“',
+    translateMessages: 'Versti žinutes',
+    translateMessagesHint: 'Kitos kalbos tekstas prieš perskaitymą išverčiamas į radijo kalbą',
     testSend: 'Siųsti testą į eterį',
     testAired: 'Testas nuskambėjo eteryje',
     testWaiting: 'Klausytojas jungiasi iš naujo — testas nuskambės, kai tik jis sugrįš',

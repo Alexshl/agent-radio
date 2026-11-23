@@ -56,6 +56,7 @@ const settingsBody = z.object({
   voice: z.string().max(200).nullable().optional(),
   lang: z.enum(SUMMARY_LANGS).optional(),
   speakSession: z.boolean().optional(),
+  translateMessages: z.boolean().optional(),
   chime: z.boolean().optional(),
   duckDb: z.number().min(0).max(40).optional(),
   ...levelsSchema.shape,
@@ -91,6 +92,7 @@ export function appRoutes(deps: FullDeps) {
     session: m.session,
     host: m.host,
     text: m.text,
+    spokenText: m.spokenText,
     status: m.status,
     type: m.type,
     durationSec: m.durationSec,
@@ -171,7 +173,13 @@ export function appRoutes(deps: FullDeps) {
         chime: st.chime,
         ...listenLinks(config, st),
       },
-      settings: { voice: user.voice, lang: user.lang, speakSession: user.speakSession, speechRate: user.speechRate },
+      settings: {
+        voice: user.voice,
+        lang: user.lang,
+        speakSession: user.speakSession,
+        translateMessages: user.translateMessages,
+        speechRate: user.speechRate,
+      },
       learn: learnView(db, user, deps.llm),
       allowOwnUrls: user.role === 'admin' || getSetting(db, 'allowOwnUrls'),
       defaultVoice: registry.defaultVoiceKey(user.lang),
@@ -264,6 +272,7 @@ export function appRoutes(deps: FullDeps) {
     if (b.voice !== undefined) userSet.voice = b.voice
     if (b.lang) userSet.lang = b.lang
     if (b.speakSession !== undefined) userSet.speakSession = b.speakSession
+    if (b.translateMessages !== undefined) userSet.translateMessages = b.translateMessages
     if (b.speechRate !== undefined) userSet.speechRate = b.speechRate
     if (Object.keys(userSet).length)
       db.update(users)

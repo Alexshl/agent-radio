@@ -243,6 +243,8 @@ export const de: Strings = {
     chimeHint: 'Ein kurzer Doppelton',
     speakSession: 'Sitzung nennen',
     speakSessionHint: '„Sitzung invoa. …“',
+    translateMessages: 'Nachrichten übersetzen',
+    translateMessagesHint: 'Text in einer anderen Sprache wird vor dem Vorlesen in die Radiosprache übersetzt',
     testSend: 'Test auf Sendung schicken',
     testAired: 'Der Test lief auf Sendung',
     testWaiting: 'Der Zuhörer verbindet sich neu — der Test läuft, sobald er zurück ist',

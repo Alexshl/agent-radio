@@ -78,6 +78,13 @@
       "when": 1795434537440,
       "tag": "0010_preset_health",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1795444061522,
+      "tag": "0011_message_translation",
+      "breakpoints": true
     }
   ]
 }

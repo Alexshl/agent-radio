@@ -78,7 +78,7 @@ export async function replayMessages(
       if (!clip) {
         try {
           clip = await tts.makeClip({
-            text: spokenText(user, m.session, m.text),
+            text: spokenText(user, m.session, m.spokenText ?? m.text),
             voice: user.voice,
             lang: user.lang,
             chime: st.chime,
@@ -102,6 +102,7 @@ export async function replayMessages(
           session: m.session,
           host: m.host,
           text: m.text,
+          spokenText: m.spokenText,
           type: m.type,
           durationSec: m.durationSec,
           status: 'waiting',

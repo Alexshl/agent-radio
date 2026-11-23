@@ -144,6 +144,11 @@ export function History() {
                     </div>
                     <div style={{ marginTop: 3 }} className={m.status === 'skipped' && m.type !== 'audio' ? 'muted' : undefined}>
                       {m.text}
+                      {m.spokenText ? (
+                        <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                          {m.spokenText}
+                        </div>
+                      ) : null}
                       {m.type === 'audio' && m.durationSec ? (
                         <span className="mono muted" style={{ fontSize: 12, marginLeft: 8 }}>
                           {fmtDuration(m.durationSec)}

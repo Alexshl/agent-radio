@@ -239,6 +239,8 @@ export const ru = {
     chimeHint: 'Короткий двойной тон',
     speakSession: 'Называть сессию',
     speakSessionHint: '«Сесія invoa. …»',
+    translateMessages: 'Переводить сообщения',
+    translateMessagesHint: 'Текст на другом языке переводится на язык радио перед озвучкой',
     testSend: 'Отправить тест в эфир',
     testAired: 'Тест прозвучал в эфире',
     testWaiting: 'Слушатель переподключается — тест прозвучит, как только он вернётся',

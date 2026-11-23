@@ -240,6 +240,8 @@ export const en: Strings = {
     chimeHint: 'A short double tone',
     speakSession: 'Announce the session',
     speakSessionHint: '“Session invoa. …”',
+    translateMessages: 'Translate messages',
+    translateMessagesHint: 'Text in another language is translated into the radio language before it is spoken',
     testSend: 'Send a test to the air',
     testAired: 'The test played on air',
     testWaiting: 'The listener is reconnecting — the test will play as soon as they are back',

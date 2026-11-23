@@ -54,6 +54,8 @@ export interface ChatOpts {
   // Anthropic only: let the model search the web (the web_search server tool)
   webSearch?: boolean
   maxTokens?: number
+  // request timeout, default LLM_TIMEOUT_MS
+  timeoutMs?: number
 }
 
 // The JSON object inside a model answer: plain, in a ``` fence, or surrounded by prose.
@@ -189,7 +191,7 @@ export class LlmService {
         messages: [{ role: 'user', content: user }],
       }
       if (opts.webSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]
-      const r = await this.post(`${BASE.anthropic}/v1/messages`, headers, body)
+      const r = await this.post(`${BASE.anthropic}/v1/messages`, headers, body, opts.timeoutMs)
       const j = r as { content?: { type?: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } }
       text = (j.content ?? [])
         .filter((b) => b.type === 'text' && typeof b.text === 'string')
@@ -207,7 +209,7 @@ export class LlmService {
         response_format: { type: 'json_object' },
         stream: false,
       }
-      const r = await this.post(`${this.baseUrl(p)}/chat/completions`, headers, body)
+      const r = await this.post(`${this.baseUrl(p)}/chat/completions`, headers, body, opts.timeoutMs)
       const j = r as { choices?: { message?: { content?: unknown } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } }
       const c = j.choices?.[0]?.message?.content
       text = typeof c === 'string' ? c : ''
@@ -220,10 +222,10 @@ export class LlmService {
     return { data: parsed.data, provider: p, model, tokensIn: tin, tokensOut: tout }
   }
 
-  private async post(url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
+  private async post(url: string, headers: Record<string, string>, body: unknown, timeoutMs = LLM_TIMEOUT_MS): Promise<unknown> {
     let res: Response
     try {
-      res = await this.fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(LLM_TIMEOUT_MS) })
+      res = await this.fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) })
     } catch (e) {
       throw new LlmError('http', `The model request failed: ${e instanceof Error ? e.name : 'error'}`)
     }

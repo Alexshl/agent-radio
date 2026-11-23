@@ -636,6 +636,19 @@ function VoiceCard({ r }: { r: Radio }) {
           </div>
           <Switch on={s.speakSession} onChange={(speakSession) => save.mutate({ speakSession })} label={S.radio.speakSession} />
         </div>
+        <div className="row between" style={{ gap: 16 }}>
+          <div>
+            <div style={{ fontWeight: 550 }}>{S.radio.translateMessages}</div>
+            <div className="muted" style={{ fontSize: 12 }}>
+              {S.radio.translateMessagesHint}
+            </div>
+          </div>
+          <Switch
+            on={s.translateMessages}
+            onChange={(translateMessages) => save.mutate({ translateMessages })}
+            label={S.radio.translateMessages}
+          />
+        </div>
       </div>
     </section>
   )

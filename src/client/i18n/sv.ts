@@ -242,6 +242,8 @@ export const sv: Strings = {
     chimeHint: 'En kort dubbelton',
     speakSession: 'Säg sessionens namn',
     speakSessionHint: '”Session invoa. …”',
+    translateMessages: 'Översätt meddelanden',
+    translateMessagesHint: 'Text på ett annat språk översätts till radiospråket innan den läses upp',
     testSend: 'Skicka ett test i sändning',
     testAired: 'Testet spelades i sändning',
     testWaiting: 'Lyssnaren återansluter — testet spelas så fort den är tillbaka',

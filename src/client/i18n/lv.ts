@@ -242,6 +242,8 @@ export const lv: Strings = {
     chimeHint: 'Īss dubults signāls',
     speakSession: 'Nosaukt sesiju',
     speakSessionHint: '“Sesija invoa. …”',
+    translateMessages: 'Tulkot ziņas',
+    translateMessagesHint: 'Teksts citā valodā pirms ierunāšanas tiek iztulkots radio valodā',
     testSend: 'Nosūtīt testu ēterā',
     testAired: 'Tests noskanēja ēterā',
     testWaiting: 'Klausītājs atkārtoti savienojas — tests noskanēs, līdzko viņš atgriezīsies',
