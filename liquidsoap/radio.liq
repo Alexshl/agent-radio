@@ -98,12 +98,18 @@ def playlist_source(spec) =
 end
 
 # skip_reg receives the function that ends the current music track (the fallback of the "queue" / the playlist)
-def music_source(spec, music_q, skip_reg) =
+# relay_reg receives the function that stops the relay input (so a replaced relay does not keep reconnecting)
+def music_source(spec, music_q, skip_reg, relay_reg) =
   t = spec.type
   if t == "relay" then
     # input.http runs on its own (network) clock: buffer() decouples it from the station clock;
     # mksafe falls back to silence whenever the relay is down, input.http reconnects by itself (poll_delay)
-    mksafe(buffer(buffer=3.0, max=12.0, input.http(poll_delay=5.0, user_agent=relay_user_agent, spec.url ?? "")))
+    # after an error the url is reset to the original one, so the reconnect re-resolves the redirect instead of reusing an expired token
+    original = spec.url ?? ""
+    inp = input.http(poll_delay=5.0, user_agent=relay_user_agent, original)
+    inp.on_error(synchronous=false, fun (_) -> inp.set_url(original))
+    relay_reg(fun () -> inp.stop())
+    mksafe(buffer(buffer=3.0, max=12.0, inp))
   elsif t == "playlist" then
     pl = playlist_source(spec)
     skip_reg(fun () -> pl.skip())
@@ -121,6 +127,7 @@ end
 
 def add_station(id, duck_db, music_db, voice_db, track_db) =
   pending = ref(null)
+  stop_relay = ref(fun () -> ())
   duck = ref(duck_db)
   # mix levels in dB, changed live through /station/set_levels (the amplify getters below are read on every frame)
   music_gain = ref(music_db)
@@ -220,7 +227,9 @@ def add_station(id, duck_db, music_db, voice_db, track_db) =
     host=icecast_host, port=icecast_port, password=icecast_password,
     mount="/#{id}", name="agent-radio #{id}", mksafe(limited))
   def set_source(spec) =
-    pending := music.prepare(music_source(spec, music_qa, skip_reg))
+    stop_relay()()
+    stop_relay := fun () -> ()
+    pending := music.prepare(music_source(spec, music_qa, skip_reg, fun (f) -> stop_relay := f))
   end
   def set_levels(m, v, t) =
     music_gain := m ?? music_gain()
@@ -230,7 +239,11 @@ def add_station(id, duck_db, music_db, voice_db, track_db) =
   def levels() =
     {music_db=music_gain(), voice_db=voice_gain(), track_db=track_gain()}
   end
-  {set_source=set_source, voice=voice_q, music_push=music_push, music_flush=music_flush, music_length=music_length, music_skip=music_skip, music_previous=music_previous, history=history, track=track_q, duck=duck, set_levels=set_levels, levels=levels, out=out}
+  def stop() =
+    stop_relay()()
+    stop_relay := fun () -> ()
+  end
+  {set_source=set_source, stop=stop, voice=voice_q, music_push=music_push, music_flush=music_flush, music_length=music_length, music_skip=music_skip, music_previous=music_previous, history=history, track=track_q, duck=duck, set_levels=set_levels, levels=levels, out=out}
 end
 
 def reply(resp, status, data) =
@@ -275,6 +288,7 @@ end))
 harbor.http.register(port=control_port, method="POST", "/station/remove", handler(fun (x, resp) -> begin
   if list.assoc.mem(x.id, stations()) then
     s = list.assoc(x.id, stations())
+    s.stop()
     s.out.shutdown()
     stations := list.assoc.remove(x.id, stations())
     reply(resp, 200, {ok=true})

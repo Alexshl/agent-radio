@@ -3,6 +3,7 @@ import { createApp } from './app'
 import { bootstrap, seedAdmin, seedPresets } from './bootstrap'
 import { closeStale } from './delivery'
 import { LearnScheduler } from './learn/scheduler'
+import { checkAllPresets } from './presets-health'
 import { cleanup } from './retention'
 import { relayRoutes } from './routes/relay'
 import { syncEngine } from './stations'
@@ -61,6 +62,11 @@ const clean = () => {
 }
 clean()
 setInterval(clean, 3600_000).unref()
+
+// preset stations: a health check ~1 minute after the start and then every 30 minutes (hidden from users after 2 failures)
+const checkPresets = () => void checkAllPresets(deps.db, deps.presetProbe)
+setTimeout(checkPresets, 60_000).unref()
+setInterval(checkPresets, 30 * 60_000).unref()
 
 // voice model download in the background, so the first message does not wait for it
 deps.ttsService.warmUp()?.catch((e) => console.error('TTS warm-up failed:', e instanceof Error ? e.message : e))

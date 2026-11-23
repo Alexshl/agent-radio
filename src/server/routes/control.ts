@@ -3,6 +3,7 @@
 import { eq } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { presets } from '../db/schema'
+import { visibleToUsers } from '../presets-health'
 import type { FullDeps } from '../deps'
 import { type ControlText, controlText } from '../control-text'
 import { authenticateControl } from '../lib/control-token'
@@ -177,6 +178,7 @@ export function controlRoutes(deps: FullDeps) {
         .from(presets)
         .orderBy(presets.position)
         .all()
+        .filter(visibleToUsers)
         .map((p) => ({ title: p.name, url: source('station', p.id), method: 'POST' as const })),
       { title: t.status, url: `${base}/status?k=${k}`, method: 'GET' },
     ]

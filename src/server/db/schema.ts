@@ -171,6 +171,10 @@ export const presets = sqliteTable('presets', {
   description: text('description').notNull().default(''),
   url: text('url').notNull(),
   position: integer('position').notNull().default(0),
+  // health check (presets-health.ts): 'ok' | 'fail' | 'unknown'; presets with fail_count >= 2 are hidden from users
+  status: text('status').notNull().default('unknown'),
+  failCount: integer('fail_count').notNull().default(0),
+  checkedAt: integer('checked_at'),
 })
 
 // The shared music library index (paths are relative to MUSIC_DIR, '/'-separated).

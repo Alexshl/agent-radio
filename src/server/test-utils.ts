@@ -13,6 +13,7 @@ import type { IcecastApi } from './icecast'
 import { createApiKey } from './lib/api-keys'
 import type { Resolver, Transport } from './lib/safe-fetch'
 import { SecretStore } from './lib/secrets'
+import type { PresetProbe } from './presets-health'
 import { TtsRegistry } from './tts'
 import { hashPassword } from './lib/password'
 import { RateLimiter } from './lib/rate-limit'
@@ -40,7 +41,15 @@ export const fakeResolver: Resolver = async (host) => {
   return [{ address: '93.184.216.34', family: 4 as const }]
 }
 
-export function setup(opts: { listeners?: number | null; env?: Record<string, string>; authLimit?: number; transport?: Transport } = {}) {
+export function setup(
+  opts: {
+    listeners?: number | null
+    env?: Record<string, string>
+    authLimit?: number
+    transport?: Transport
+    presetProbe?: PresetProbe
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'ar-test-'))
   const music = join(dir, 'music')
   mkdirSync(music)
@@ -113,6 +122,7 @@ export function setup(opts: { listeners?: number | null; env?: Record<string, st
     registry,
     resolver: fakeResolver,
     transport: opts.transport,
+    presetProbe: opts.presetProbe,
   }
   const full = withDefaults(deps)
   const app = createApp(full)

@@ -1241,6 +1241,9 @@ interface PresetRow {
   description: string
   url: string
   listeners: number
+  status: 'ok' | 'fail' | 'unknown'
+  failCount: number
+  checkedAt: number | null
 }
 
 function PresetsTab() {
@@ -1248,27 +1251,17 @@ function PresetsTab() {
   const fail = useErrorToast()
   const q = useQuery({ queryKey: ['admin-presets'], queryFn: () => get<{ presets: PresetRow[] }>('/admin/presets') })
   const st = useQuery({ queryKey: ['admin-settings'], queryFn: () => get<AdminSettings>('/admin/settings') })
-  const [health, setHealth] = useState<Record<string, 'ok' | 'slow' | 'down' | 'checking'>>({})
   const [form, setForm] = useState<{ id: string | null; name: string; description: string; url: string } | null>(null)
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin-presets'] })
 
-  const checkAll = (rows: PresetRow[]) => {
-    setHealth(Object.fromEntries(rows.map((r) => [r.id, 'checking' as const])))
-    for (const r of rows) {
-      post<{ status: 'ok' | 'slow' | 'down' }>('/admin/presets/check', { url: r.url }).then(
-        (res) => setHealth((h) => ({ ...h, [r.id]: res.status })),
-        () => setHealth((h) => ({ ...h, [r.id]: 'down' })),
-      )
-    }
-  }
-  const firstLoad = useRef(true)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: checkAll only sets state; it must run once per fresh list
-  useEffect(() => {
-    if (q.data && firstLoad.current) {
-      firstLoad.current = false
-      checkAll(q.data.presets)
-    }
-  }, [q.data])
+  const checkAll = useMutation({
+    mutationFn: () => post('/admin/presets/check', {}),
+    // the pass runs in the background: re-read the list while it goes
+    onSuccess: () => {
+      for (const ms of [5_000, 15_000, 30_000, 60_000, 120_000]) setTimeout(refresh, ms)
+    },
+    onError: fail,
+  })
 
   const save = useMutation({
     mutationFn: () => {
@@ -1278,7 +1271,6 @@ function PresetsTab() {
     },
     onSuccess: () => {
       setForm(null)
-      firstLoad.current = true
       refresh()
     },
     onError: fail,
@@ -1292,19 +1284,28 @@ function PresetsTab() {
 
   if (q.isLoading) return <Loading />
   if (q.isError || !q.data) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />
-  const badge = (id: string) => {
-    const h = health[id]
-    if (!h || h === 'checking') return <span className="bdg">{S.admin.presets.checking}</span>
-    if (h === 'ok') return <span className="bdg t-success">{S.admin.presets.ok}</span>
-    if (h === 'slow') return <span className="bdg t-warning">{S.admin.presets.slow}</span>
-    return <span className="bdg t-danger">{S.admin.presets.down}</span>
+  const badge = (p: PresetRow) => {
+    const when = p.checkedAt ? `${S.admin.presets.checkedAt} ${new Date(p.checkedAt).toLocaleString()}` : undefined
+    if (p.status === 'ok')
+      return (
+        <span className="bdg t-success" title={when}>
+          {S.admin.presets.ok}
+        </span>
+      )
+    if (p.status === 'fail')
+      return (
+        <span className="bdg t-danger" title={when}>
+          {S.admin.presets.down}
+        </span>
+      )
+    return <span className="bdg">{S.admin.presets.unchecked}</span>
   }
   return (
     <section className="card" style={{ overflow: 'hidden' }}>
       <div className="card-h" style={{ justifyContent: 'space-between' }}>
         {S.admin.presets.title}
         <span className="row" style={{ gap: 8 }}>
-          <button type="button" className="btn sm" onClick={() => checkAll(q.data.presets)}>
+          <button type="button" className="btn sm" onClick={() => checkAll.mutate()} disabled={checkAll.isPending}>
             {S.admin.presets.checkAll}
           </button>
           <button type="button" className="btn sm" onClick={() => setForm({ id: null, name: '', description: '', url: '' })}>
@@ -1363,8 +1364,13 @@ function PresetsTab() {
             <div className="mono muted ell" style={{ fontSize: 12 }}>
               {p.url}
             </div>
+            {p.checkedAt && (
+              <div className="muted" style={{ fontSize: 12 }}>
+                {S.admin.presets.checkedAt} {new Date(p.checkedAt).toLocaleString()}
+              </div>
+            )}
           </div>
-          {badge(p.id)}
+          {badge(p)}
           <span className="muted" style={{ fontSize: 12, minWidth: 64, textAlign: 'right' }}>
             {S.admin.presets.listening(p.listeners)}
           </span>

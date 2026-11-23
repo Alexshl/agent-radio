@@ -13,6 +13,7 @@ import { RateLimiter } from './lib/rate-limit'
 import { SecretStore, getAppSecret } from './lib/secrets'
 import { UserLock } from './lib/user-lock'
 import { type Resolver, type Transport, defaultResolver, nodeTransport } from './lib/safe-fetch'
+import { type PresetProbe, ffmpegProbe } from './presets-health'
 import { FfmpegMedia, type MediaTools } from './media'
 import { TtsRegistry, type TtsService } from './tts'
 
@@ -45,6 +46,8 @@ export interface Deps {
   // learn mode: the AI model and the lyrics / notes preparation
   llm?: LlmService
   learnPrep?: SongPreparer
+  // preset station health check (ffmpeg; injectable for tests)
+  presetProbe?: PresetProbe
 }
 
 export type FullDeps = Required<Deps>
@@ -72,5 +75,6 @@ export function withDefaults(d: Deps): FullDeps {
     checkLimiter: d.checkLimiter ?? new RateLimiter(10),
     controlLimiter: d.controlLimiter ?? new RateLimiter(30),
     userLock: d.userLock ?? new UserLock(),
+    presetProbe: d.presetProbe ?? ffmpegProbe(d.config.ffmpegBin),
   }
 }

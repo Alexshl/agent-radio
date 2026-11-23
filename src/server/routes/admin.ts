@@ -14,6 +14,7 @@ import { newId } from '../lib/ids'
 import { type Resolver, type Transport, UrlBlockedError, parseExternalUrl, safeGet } from '../lib/safe-fetch'
 import { INVITE_DAYS, createInvite, createReset, deleteInvite, listPendingInvites } from '../lib/invites'
 import { type SettingKey, getSetting, setSetting } from '../lib/settings'
+import { checkAllPresets, checkPreset } from '../presets-health'
 import { LEVEL_RANGES, RATE_RANGE, parseSource } from '../stations'
 import { diskSpace, trashTrack } from '../uploads'
 import { createPron, deletePron, listPron, pronBody, pronPatch, pronView, updatePron } from '../tts/pronunciation-store'
@@ -565,8 +566,18 @@ export function adminRoutes(deps: FullDeps) {
 
   r.post('/presets/check', async (c) => {
     const body = z.object({ url: z.string().max(2000) }).safeParse(await c.req.json().catch(() => null))
-    if (!body.success) throw badRequest('invalid_body')
+    if (!body.success) {
+      // no url: the health check of every preset, in the background
+      void checkAllPresets(db, deps.presetProbe)
+      return c.json({ started: true }, 202)
+    }
     return c.json(await checkReachable(body.data.url, { resolver: deps.resolver, transport: deps.transport }))
+  })
+
+  r.post('/presets/:id/check', async (c) => {
+    const row = await checkPreset(db, c.req.param('id'), deps.presetProbe)
+    if (!row) throw notFound('Preset not found')
+    return c.json({ id: row.id, status: row.status, failCount: row.failCount, checkedAt: row.checkedAt })
   })
 
   // ---- server ----
