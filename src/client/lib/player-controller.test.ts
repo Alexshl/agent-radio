@@ -738,6 +738,22 @@ describe('PlayerController live edge', () => {
       await vi.advanceTimersByTimeAsync(10_000)
       expect(audio.playCalls).toBe(calls)
     })
+    it('an outside play command right after the system took the audio is ignored on a hidden page only, and for 15 s', async () => {
+      const { ctl, audio } = await startLive()
+      interrupt(audio)
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(7_500)
+      ctl.externalPlay(true)
+      expect(audio.playCalls).toBe(calls)
+      ctl.externalPlay(false)
+      expect(audio.playCalls).toBe(calls + 1)
+      await vi.advanceTimersByTimeAsync(0)
+      interrupt(audio)
+      const again = audio.playCalls
+      await vi.advanceTimersByTimeAsync(15_000)
+      ctl.externalPlay(true)
+      expect(audio.playCalls).toBe(again + 1)
+    })
     it('a pause after a mere wait for data is an interruption, not a cut stream', async () => {
       const { ctl, audio } = await startLive()
       const trace: string[] = []

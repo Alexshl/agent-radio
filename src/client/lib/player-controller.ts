@@ -48,6 +48,9 @@ export const INTERRUPT_EVERY_MS = 3000
 export const INTERRUPT_GIVE_UP_MS = 15 * 60_000
 // an audioSession statechange this soon after the interruption is its start (dictation beginning), never its end
 export const SESSION_START_WINDOW_MS = 2000
+// a play command from outside (Media Session) this soon after the system took the audio, on a hidden page, is not obeyed: seen on iOS 7 s
+// into an outgoing call, nobody had pressed anything, and the radio played over the ringing tone
+export const CALL_GUARD_MS = 15_000
 // a 'stalled' event only counts when the stream shows no progress for this long
 export const STALL_GRACE_MS = 8000
 // "stay at the live edge": every EDGE_CHECK_MS a live stream that is more than EDGE_MAX_LAG_S behind (a backlog kept by the browser or an
@@ -300,6 +303,15 @@ export class PlayerController {
   userPause() {
     if (this.state.current?.kind === 'live') this.stop()
     else this.pause()
+  }
+
+  // The play action of the Media Session (lock screen, headset, speaker, or the system itself).
+  externalPlay(hidden: boolean) {
+    if (hidden && this.interrupted && this.timers.now() - this.interruptedAt < CALL_GUARD_MS) {
+      this.onTrace?.('playIgnored')
+      return
+    }
+    this.resume()
   }
 
   // A live stream was paused by the system: keep the source wanted ("reconnecting") and try to resume it.

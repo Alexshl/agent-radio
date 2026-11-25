@@ -152,7 +152,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     }
     const c = () => ctl.current
-    set('play', () => c()?.resume())
+    set('play', () => c()?.externalPlay(document.visibilityState === 'hidden'))
     set('pause', () => c()?.userPause())
     set('stop', () => c()?.stop())
     if (cur.kind === 'live') {
