@@ -725,6 +725,30 @@ describe('PlayerController live edge', () => {
       expect(audio.playCalls).toBe(calls + 1)
       expect(audio.src).toMatch(/_r=\d+$/)
     })
+    it('a re-open whose own pause event never came (load() drops it) does not swallow the next system pause (a call)', async () => {
+      const { ctl, audio } = await startLive()
+      ctl.recover()
+      await vi.advanceTimersByTimeAsync(0)
+      audio.emit('play')
+      audio.emit('playing')
+      const calls = audio.playCalls
+      interrupt(audio)
+      expect(ctl.getState().playing).toBe(false)
+      expect(audio.src).toBe('')
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(audio.playCalls).toBe(calls)
+    })
+    it('a pause after a mere wait for data is an interruption, not a cut stream', async () => {
+      const { ctl, audio } = await startLive()
+      const trace: string[] = []
+      ctl.onTrace = (type) => trace.push(type)
+      audio.emit('waiting')
+      interrupt(audio)
+      expect(trace).toEqual(['interrupt'])
+      const calls = audio.playCalls
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(audio.playCalls).toBe(calls)
+    })
     it('a pause without a stall before it is still an interruption (dictation): no reconnect', async () => {
       const { ctl, audio } = await startLive()
       interrupt(audio)

@@ -162,6 +162,8 @@ export class PlayerController {
   private audioSessionSet = false
   // reopen() paused a playing element itself: the next 'pause' event is not an interruption
   private ownPause = false
+  // a real 'stalled' event with no progress since (a 'waiting' alone is not one: a call or dictation also causes it)
+  private stalledSeen = false
   onError: ((source: PlayerSource) => void) | null = null
   // diagnostics hook (lib/diag.ts): interrupt() / resumeNow() report here
   onTrace: ((type: string, data?: Record<string, unknown>) => void) | null = null
@@ -210,6 +212,9 @@ export class PlayerController {
       this.watchEdge()
     })
     on('play', () => {
+      // our own pause would have been reported before this: load() drops it in real browsers, and a flag left set would swallow the next
+      // pause, the one of the system (a phone call), so the radio came back over the ringing tone
+      this.ownPause = false
       if (!this.state.current) return
       if (this.needFresh && this.state.current.kind === 'live') return this.reopen()
       if (this.state.reconnecting) return
@@ -226,9 +231,11 @@ export class PlayerController {
         this.needFresh = true
         // the stream stalled just before: the server cut it (engine restart) and Safari paused the element at its end. That is a broken
         // connection, not the system taking the audio: reconnect on our own instead of waiting for the user.
-        if (this.stallTimer) {
-          this.timers.clear(this.stallTimer)
-          this.stallTimer = null
+        const cut = this.stalledSeen
+        this.stalledSeen = false
+        if (this.stallTimer) this.timers.clear(this.stallTimer)
+        this.stallTimer = null
+        if (cut) {
           this.onTrace?.('streamCut')
           this.release()
           return this.dropped()
@@ -259,8 +266,12 @@ export class PlayerController {
       this.onError?.(cur)
     })
     // a stream that stalls and does not recover by itself
-    on('stalled', () => this.armStall())
+    on('stalled', () => {
+      this.stalledSeen = true
+      this.armStall()
+    })
     on('timeupdate', () => {
+      this.stalledSeen = false
       if (this.stallTimer) {
         this.timers.clear(this.stallTimer)
         this.stallTimer = null
@@ -269,7 +280,7 @@ export class PlayerController {
     // back on screen / focus / network / bfcache restore: an interrupted stream is resumed at once (the system gave the audio back)
     const visible = () => events.doc?.visibilityState !== 'hidden'
     events.doc?.addEventListener('visibilitychange', () => visible() && this.recover())
-    events.win?.addEventListener('online', () => this.recover())
+    events.win?.addEventListener('online', () => (visible() || !this.interrupted) && this.recover())
     events.win?.addEventListener('focus', () => this.resumeNow())
     events.win?.addEventListener('pageshow', () => this.resumeNow())
     const session = events.session
