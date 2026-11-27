@@ -34,26 +34,34 @@ function sidecar(synth: (body: Record<string, unknown>) => Response) {
 describe('local provider (mock sidecar)', () => {
   it('posts engine, voice, text and rate; writes the wav; native rate is not applied twice', async () => {
     const f = sidecar(() => new Response('WAV', { headers: { 'x-rate-native': '1' } }))
-    const p = new LocalProvider('http://tts-local:8795', f as unknown as typeof fetch)
+    const p = new LocalProvider('local', 'http://tts-local:8795', null, f as unknown as typeof fetch)
     const base = tmp()
     const file = await p.synthesize({ text: 'Привіт', voice: 'styletts2/Денис Денисенко', lang: 'uk', rate: 1.2 }, base)
     expect(file).toBe(`${base}.wav`)
     expect(readFileSync(file, 'utf8')).toBe('WAV')
     const call = f.mock.calls[0]
     expect(call?.[0]).toBe('http://tts-local:8795/synthesize')
-    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ engine: 'styletts2', voice: 'Денис Денисенко', text: 'Привіт', rate: 1.2 })
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      engine: 'styletts2',
+      voice: 'Денис Денисенко',
+      text: 'Привіт',
+      rate: 1.2,
+      lang: 'uk',
+    })
   })
 
   it('errors from the sidecar and bad voice ids are thrown (the service then falls back to piper)', async () => {
     const f = sidecar(() => new Response('engine loading', { status: 503 }))
-    const p = new LocalProvider('http://x', f as unknown as typeof fetch)
+    const p = new LocalProvider('local', 'http://x', null, f as unknown as typeof fetch)
     await expect(p.synthesize({ text: 'a', voice: 'styletts2/v', lang: 'uk' }, tmp())).rejects.toThrow(/503/)
     await expect(p.synthesize({ text: 'a', voice: 'novoice', lang: 'uk' }, tmp())).rejects.toThrow(/invalid local voice/)
-    await expect(new LocalProvider(null).synthesize({ text: 'a', voice: 'e/v', lang: 'uk' }, tmp())).rejects.toThrow(/not configured/)
+    await expect(new LocalProvider('local', null).synthesize({ text: 'a', voice: 'e/v', lang: 'uk' }, tmp())).rejects.toThrow(
+      /not configured/,
+    )
   })
 
   it('engines() is null when the sidecar is down', async () => {
-    const p = new LocalProvider('http://x', (async () => {
+    const p = new LocalProvider('local', 'http://x', null, (async () => {
       throw new Error('ECONNREFUSED')
     }) as unknown as typeof fetch)
     expect(await p.engines()).toBeNull()

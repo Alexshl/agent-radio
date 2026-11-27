@@ -17,17 +17,29 @@ export interface LocalEngineInfo {
 }
 
 export const SYNTH_TIMEOUT_MS = 240_000
+// a GPU machine on the LAN may be off: a short synthesis timeout lets the message fall back to another voice soon
+export const REMOTE_SYNTH_TIMEOUT_MS = 20_000
+const PROBE_TIMEOUT_MS = 3000
 
 export class LocalProvider implements TtsProvider {
-  readonly name = 'local'
+  readonly name: 'local' | 'remote'
   // the provider applies the rate itself (natively in the engine or with atempo): the service must not do it twice
   readonly nativeRate = true
 
   constructor(
+    name: 'local' | 'remote',
     private baseUrl: string | null,
+    private token: string | null = null,
     private fetchImpl: typeof fetch = fetch,
-    private timeoutMs = SYNTH_TIMEOUT_MS,
-  ) {}
+    private timeoutMs = name === 'remote' ? REMOTE_SYNTH_TIMEOUT_MS : SYNTH_TIMEOUT_MS,
+  ) {
+    this.name = name
+  }
+
+  // the token is only ever put into this header (never logged, never returned by an API)
+  private auth(): Record<string, string> {
+    return this.token ? { Authorization: `Bearer ${this.token}` } : {}
+  }
 
   get enabled(): boolean {
     return !!this.baseUrl
@@ -37,7 +49,7 @@ export class LocalProvider implements TtsProvider {
   async engines(): Promise<LocalEngineInfo[] | null> {
     if (!this.baseUrl) return null
     try {
-      const res = await this.fetchImpl(`${this.baseUrl}/voices`, { signal: AbortSignal.timeout(3000) })
+      const res = await this.fetchImpl(`${this.baseUrl}/voices`, { headers: this.auth(), signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
       if (!res.ok) return null
       return ((await res.json()) as { engines: LocalEngineInfo[] }).engines
     } catch {
@@ -46,19 +58,19 @@ export class LocalProvider implements TtsProvider {
   }
 
   async synthesize(req: TtsRequest, outBase: string): Promise<string> {
-    if (!this.baseUrl) throw new Error('local voices are not configured')
+    if (!this.baseUrl) throw new Error(`${this.name} voices are not configured`)
     const voice = req.voice ?? ''
     const i = voice.indexOf('/')
-    if (i <= 0) throw new Error(`invalid local voice id: ${voice}`)
+    if (i <= 0) throw new Error(`invalid ${this.name} voice id: ${voice}`)
     const engine = voice.slice(0, i)
     const rate = req.rate && req.rate !== 1 ? req.rate : 1
     const res = await this.fetchImpl(`${this.baseUrl}/synthesize`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ engine, voice: voice.slice(i + 1), text: req.text, rate }),
+      headers: { 'Content-Type': 'application/json', ...this.auth() },
+      body: JSON.stringify({ engine, voice: voice.slice(i + 1), text: req.text, rate, lang: req.lang }),
       signal: AbortSignal.timeout(this.timeoutMs),
     })
-    if (!res.ok) throw new Error(`tts-local ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)
+    if (!res.ok) throw new Error(`tts-${this.name} ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)
     const file = `${outBase}.wav`
     writeFileSync(file, Buffer.from(await res.arrayBuffer()))
     return await applyTempo(file, rate, res.headers.get('x-rate-native') === '1', outBase)

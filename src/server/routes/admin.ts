@@ -200,7 +200,7 @@ export function adminRoutes(deps: FullDeps) {
     const defaultVoice = getSetting(db, 'defaultVoice') ?? registry.defaultVoiceKey('uk')
     const byLang = getSetting(db, 'defaultVoiceByLang')
     return c.json({
-      providers: PROVIDER_IDS.filter((id) => id !== 'local').map((id) => ({
+      providers: PROVIDER_IDS.filter((id) => id !== 'local' && id !== 'remote').map((id) => ({
         id,
         label: PROVIDER_LABEL[id],
         configured: registry.isConfigured(id),
@@ -214,7 +214,7 @@ export function adminRoutes(deps: FullDeps) {
         // a voice of one language is the default of that language; a multilingual one of the languages without their own
         isDefault: v.lang !== 'multi' ? byLang[v.lang] === v.key : v.key === defaultVoice,
         // a local voice is listed only while its engine is switched on (the engine switch lives in the local voices card)
-        engineOn: v.provider === 'local' ? registry.voiceEnabled(v.key.split('/')[0] ?? v.key) : undefined,
+        engineOn: v.provider === 'local' ? registry.voiceEnabled(v.key.split('/')[0] ?? v.key) : v.provider === 'remote' ? true : undefined,
       })),
       defaultVoice,
       defaultVoiceByLang: byLang,
@@ -310,7 +310,7 @@ export function adminRoutes(deps: FullDeps) {
   }
 
   r.get('/tts/local', async (c) => {
-    await registry.refreshLocal()
+    await Promise.all([registry.refreshLocal(), registry.refreshRemote()])
     return c.json(localState())
   })
 
@@ -325,7 +325,7 @@ export function adminRoutes(deps: FullDeps) {
 
   r.put('/tts/providers/:id', async (c) => {
     const id = c.req.param('id') as ProviderId
-    if (!PROVIDER_IDS.includes(id) || id === 'piper' || id === 'local') throw notFound('Unknown provider')
+    if (!PROVIDER_IDS.includes(id) || id === 'piper' || id === 'local' || id === 'remote') throw notFound('Unknown provider')
     const body = providerBody.safeParse(await c.req.json().catch(() => null))
     if (!body.success) throw badRequest('invalid_body')
     if (body.data.key) await registry.secrets.put(secretName(id), body.data.key)
@@ -337,7 +337,7 @@ export function adminRoutes(deps: FullDeps) {
 
   r.delete('/tts/providers/:id', (c) => {
     const id = c.req.param('id') as ProviderId
-    if (!PROVIDER_IDS.includes(id) || id === 'piper' || id === 'local') throw notFound('Unknown provider')
+    if (!PROVIDER_IDS.includes(id) || id === 'piper' || id === 'local' || id === 'remote') throw notFound('Unknown provider')
     registry.secrets.delete(secretName(id))
     return c.json({ ok: true })
   })

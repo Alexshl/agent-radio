@@ -38,6 +38,8 @@ class Synth(BaseModel):
     voice: str = ""
     text: str = Field(min_length=1, max_length=MAX_TEXT)
     rate: float = Field(default=1.0, ge=0.5, le=2.0)
+    # the language of the message (sent by the app; the engines pick their own language)
+    lang: str = ""
 
 
 @app.get("/health")

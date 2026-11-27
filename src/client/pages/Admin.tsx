@@ -957,7 +957,11 @@ function PiperCard() {
 // 'Piper', 'Gemini', ... ; a local voice shows its engine ('local:silero/xenia' -> 'Silero')
 const cap1 = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const voiceSource = (v: { provider: string; key: string }) =>
-  v.provider === 'local' ? cap1(v.key.slice('local:'.length).split('/')[0] ?? 'local') : cap1(v.provider)
+  v.provider === 'local'
+    ? cap1(v.key.slice('local:'.length).split('/')[0] ?? 'local')
+    : v.provider === 'remote'
+      ? `${cap1(v.key.slice('remote:'.length).split('/')[0] ?? 'remote')} (GPU)`
+      : cap1(v.provider)
 
 function TtsTab() {
   const qc = useQueryClient()

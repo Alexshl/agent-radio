@@ -9,7 +9,7 @@ import { newId } from '../lib/ids'
 import { prepareSpeech, stressTarget } from './pronunciation'
 import { latinTarget, latinToCyrillic } from './translit'
 import { loadEntries } from './pronunciation-store'
-import type { TtsRegistry } from './registry'
+import { type TtsRegistry, splitKey } from './registry'
 import type { ProviderId } from './voices'
 
 export type { TtsProvider, TtsRequest } from './types'
@@ -118,7 +118,24 @@ export class TtsService {
       return await applyTempo(file, req.rate, provider.nativeRate === true, outBase)
     } catch (e) {
       if (choice.provider === 'piper') throw e
-      console.error(`tts ${choice.provider} failed, falling back to piper:`, e instanceof Error ? e.message : e)
+      const why = e instanceof Error ? e.message : e
+      if (choice.provider === 'remote') {
+        // the GPU machine may be off: the default voice of this language among the other providers, then piper
+        const alt = splitKey(this.registry.defaultVoiceKey(req.lang, 'remote'))
+        if (alt.provider !== 'piper') {
+          console.error(`tts remote failed, falling back to ${alt.provider}:`, why)
+          try {
+            const p = this.registry.provider(alt.provider)
+            const file = await p.synthesize(
+              { text: speak(stressTarget(alt.provider, alt.voice), alt), voice: alt.voice, lang: req.lang, rate: req.rate },
+              outBase,
+            )
+            return await applyTempo(file, req.rate, p.nativeRate === true, outBase)
+          } catch (e2) {
+            console.error(`tts ${alt.provider} failed too, falling back to piper:`, e2 instanceof Error ? e2.message : e2)
+          }
+        }
+      } else console.error(`tts ${choice.provider} failed, falling back to piper:`, why)
       const fb = this.registry.fallback(req.lang)
       return await this.registry
         .provider('piper')

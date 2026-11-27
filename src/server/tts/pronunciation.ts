@@ -34,7 +34,7 @@ export function renderStress(text: string, target: StressTarget): string {
 
 // Which stress syntax the chosen engine takes. `voice` is the provider-specific id ('silero/kseniya', 'styletts2/…').
 export function stressTarget(provider: string, voice: string | null): StressTarget {
-  if (provider !== 'local') return 'plain'
+  if (provider !== 'local' && provider !== 'remote') return 'plain'
   const engine = (voice ?? '').split('/')[0]
   if (engine === 'silero' || engine === 'f5') return 'plus-before'
   if (engine === 'styletts2') return 'acute-after'

@@ -27,8 +27,11 @@ export class TtsRegistry {
   readonly piper: PiperProvider
   readonly catalog: PiperCatalog
   readonly local: LocalProvider
+  // the GPU voice server on another machine (same API as the sidecar, Bearer token)
+  readonly remote: LocalProvider
   // engines of the sidecar as last seen (refreshLocal); null = unreachable / not configured
   private localEngines: LocalEngineInfo[] | null = null
+  private remoteEngines: LocalEngineInfo[] | null = null
   private providers: Record<ProviderId, TtsProvider>
 
   constructor(
@@ -40,10 +43,12 @@ export class TtsRegistry {
     this.piper = new PiperProvider(config.piperModelsDir, config.piperBin, fetchImpl)
     this.catalog = new PiperCatalog(join(config.dataDir, 'piper-catalog.json'), config.piperModelsDir, fetchImpl)
     this.piper.lookup = (id) => this.catalog.get(id)
-    this.local = new LocalProvider(config.ttsLocalUrl, fetchImpl)
+    this.local = new LocalProvider('local', config.ttsLocalUrl, null, fetchImpl)
+    this.remote = new LocalProvider('remote', config.ttsRemoteUrl, config.ttsRemoteToken, fetchImpl)
     this.providers = {
       piper: this.piper,
       local: this.local,
+      remote: this.remote,
       azure: new AzureProvider(
         async () => ({ key: await this.requireKey('azure'), region: getSetting(db, 'tts.azure.region') }),
         fetchImpl,
@@ -71,6 +76,7 @@ export class TtsRegistry {
 
   isConfigured(p: ProviderId): boolean {
     if (p === 'local') return this.localEngines?.some((e) => e.status === 'ready') ?? false
+    if (p === 'remote') return this.remoteEngines?.some((e) => e.status === 'ready') ?? false
     return p === 'piper' || this.secrets.has(secretName(p))
   }
 
@@ -78,6 +84,12 @@ export class TtsRegistry {
   async refreshLocal(): Promise<LocalEngineInfo[] | null> {
     this.localEngines = await this.local.engines()
     return this.localEngines
+  }
+
+  // The same for the GPU server (called at start and every 30 s); an unreachable one only means its voices are not offered.
+  async refreshRemote(): Promise<LocalEngineInfo[] | null> {
+    this.remoteEngines = await this.remote.engines()
+    return this.remoteEngines
   }
 
   localEngineList(): LocalEngineInfo[] | null {
@@ -92,6 +104,21 @@ export class TtsRegistry {
         e.voices.map((v) => ({
           key: `local:${e.id}/${v.id}`,
           provider: 'local' as const,
+          id: `${e.id}/${v.id}`,
+          label: `${e.label} · ${v.label}`,
+          lang: v.lang,
+        })),
+      )
+  }
+
+  // Voices of the ready engines of the GPU server: no engine switch, a voice is on unless the admin switched it off.
+  remoteVoices(): VoiceInfo[] {
+    return (this.remoteEngines ?? [])
+      .filter((e) => e.status === 'ready')
+      .flatMap((e) =>
+        e.voices.map((v) => ({
+          key: `remote:${e.id}/${v.id}`,
+          provider: 'remote' as const,
           id: `${e.id}/${v.id}`,
           label: `${e.label} · ${v.label}`,
           lang: v.lang,
@@ -138,11 +165,16 @@ export class TtsRegistry {
   }
 
   allVoices(): VoiceInfo[] {
-    return [...VOICES, ...this.piperVoices(), ...this.localVoices()]
+    return [...VOICES, ...this.piperVoices(), ...this.localVoices(), ...this.remoteVoices()]
   }
 
   findVoice(key: string): VoiceInfo | undefined {
-    return findStaticVoice(key) ?? this.piperVoices().find((v) => v.key === key) ?? this.localVoices().find((v) => v.key === key)
+    return (
+      findStaticVoice(key) ??
+      this.piperVoices().find((v) => v.key === key) ??
+      this.localVoices().find((v) => v.key === key) ??
+      this.remoteVoices().find((v) => v.key === key)
+    )
   }
 
   // Voices a user may pick: provider configured, downloaded (piper) and not switched off.
@@ -150,11 +182,13 @@ export class TtsRegistry {
     return this.allVoices().filter((v) => this.isConfigured(v.provider) && this.voiceEnabled(v.key))
   }
 
-  defaultVoiceKey(lang: string): string {
+  // `skip`: a provider that just failed (its voices are not candidates)
+  defaultVoiceKey(lang: string, skip?: ProviderId): string {
+    const ok = (key: string) => this.available(key) && !(skip && key.startsWith(`${skip}:`))
     const own = getSetting(this.db, 'defaultVoiceByLang')[lang]
-    if (own && this.available(own)) return own
+    if (own && ok(own)) return own
     const configured = getSetting(this.db, 'defaultVoice')
-    if (configured && this.available(configured)) return configured
+    if (configured && ok(configured)) return configured
     const env = this.config.ttsVoice
     if (env) return env.includes(':') ? env : `piper:${env}`
     return `piper:${PIPER_DEFAULT_BY_LANG[lang] ?? PIPER_DEFAULT_BY_LANG.uk}`
@@ -192,7 +226,7 @@ export function piperInfos(c: CatalogVoice): VoiceInfo[] {
   }))
 }
 
-function splitKey(key: string): Choice {
+export function splitKey(key: string): Choice {
   const i = key.indexOf(':')
   return { provider: key.slice(0, i) as ProviderId, voice: key.slice(i + 1) || null }
 }

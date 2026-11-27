@@ -19,6 +19,9 @@ export interface Config {
   ttsLang: string
   // the tts-local sidecar (local neural voices); null = not used
   ttsLocalUrl: string | null
+  // a GPU voice server on another machine (same API as tts-local, Bearer token); null = not used
+  ttsRemoteUrl: string | null
+  ttsRemoteToken: string | null
   // learn mode: the default OpenAI-compatible server (llama.cpp on the host) used while the admin has not chosen another provider
   learnLlmUrl: string
   publicUrl: string
@@ -67,6 +70,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ttsVoice: env.TTS_VOICE?.trim() || null,
     ttsLang: env.TTS_LANG ?? 'uk',
     ttsLocalUrl: env.TTS_LOCAL_URL?.trim().replace(/\/+$/, '') || null,
+    ttsRemoteUrl: env.TTS_REMOTE_URL?.trim().replace(/\/+$/, '') || null,
+    ttsRemoteToken: env.TTS_REMOTE_TOKEN?.trim() || null,
     learnLlmUrl: (env.LEARN_LLM_URL?.trim() || 'http://host.docker.internal:8091/v1').replace(/\/+$/, ''),
     publicUrl,
     sayRatePerMin: Number(env.SAY_RATE_PER_MIN ?? 10),

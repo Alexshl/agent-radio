@@ -1,6 +1,6 @@
 // Static voice catalog of the cloud providers (Piper voices are dynamic, see piper-catalog.ts). A voice key is '<provider>:<provider voice id>'.
-export type ProviderId = 'azure' | 'openai' | 'gemini' | 'piper' | 'local'
-export const PROVIDER_IDS: ProviderId[] = ['azure', 'piper', 'local', 'openai', 'gemini']
+export type ProviderId = 'azure' | 'openai' | 'gemini' | 'piper' | 'local' | 'remote'
+export const PROVIDER_IDS: ProviderId[] = ['azure', 'piper', 'local', 'remote', 'openai', 'gemini']
 
 export interface VoiceInfo {
   key: string
@@ -38,6 +38,7 @@ export const PROVIDER_LABEL: Record<ProviderId, string> = {
   azure: 'Azure Neural',
   piper: 'Piper',
   local: 'Локальные нейро-голоса',
+  remote: 'GPU',
   openai: 'OpenAI',
   gemini: 'Google Gemini',
 }

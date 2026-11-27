@@ -8,11 +8,12 @@ import type { ProviderId } from './voices'
 export const DROPS_LATIN: { provider: ProviderId; engine?: string; langs: string[] }[] = [
   { provider: 'piper', langs: ['ru', 'uk'] },
   { provider: 'local', engine: 'silero', langs: ['ru', 'uk'] },
+  { provider: 'remote', engine: 'silero', langs: ['ru', 'uk'] },
 ]
 
 // the Cyrillic language to write in for a voice, or null when the voice reads Latin itself. `voiceLang` is the language of the voice.
 export function latinTarget(provider: ProviderId, voiceId: string | null, voiceLang: string): 'ru' | 'uk' | null {
-  const engine = provider === 'local' ? (voiceId ?? '').split('/')[0] : undefined
+  const engine = provider === 'local' || provider === 'remote' ? (voiceId ?? '').split('/')[0] : undefined
   const hit = DROPS_LATIN.find((d) => d.provider === provider && (!d.engine || d.engine === engine) && d.langs.includes(voiceLang))
   return hit ? (voiceLang === 'uk' ? 'uk' : 'ru') : null
 }

@@ -103,6 +103,9 @@ services:
       RELAY_PORT: "8792"
       # local neural voices sidecar (profile `local-tts`); an unreachable sidecar only means the voices are not offered
       TTS_LOCAL_URL: ${TTS_LOCAL_URL-http://tts-local:8795}
+      # GPU voice server on another machine (same API as tts-local); unreachable = its voices are not offered, messages use the usual voice
+      TTS_REMOTE_URL: ${TTS_REMOTE_URL:-}
+      TTS_REMOTE_TOKEN: ${TTS_REMOTE_TOKEN:-}
       LEARN_LLM_URL: ${LEARN_LLM_URL:-http://host.docker.internal:8091/v1}
     volumes:
       - data:/data

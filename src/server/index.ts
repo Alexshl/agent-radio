@@ -84,6 +84,11 @@ if (config.ttsLocalUrl) {
   refreshLocal()
   setInterval(refreshLocal, 30_000).unref()
 }
+if (config.ttsRemoteUrl) {
+  const refreshRemote = () => void deps.registry.refreshRemote()
+  refreshRemote()
+  setInterval(refreshRemote, 30_000).unref()
+}
 
 const server = serve({ fetch: createApp(deps).fetch, port: config.port }, (info) => console.log(`agent-radio listening on :${info.port}`))
 // internal-only listener for the engine's relayed streams (not published by compose)
