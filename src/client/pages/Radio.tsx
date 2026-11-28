@@ -511,6 +511,17 @@ function VoiceCard({ r }: { r: Radio }) {
       <div className="card-h">{S.radio.voiceMix}</div>
       <div className="card-b stack" style={{ gap: 14 }}>
         <div className="field">
+          {/* biome-ignore lint/a11y/noLabelWithoutControl: caption of the segmented control below */}
+          <label>{S.radio.summaryLang}</label>
+          <select className="inp" aria-label={S.radio.summaryLang} value={s.lang} onChange={(e) => save.mutate({ lang: e.target.value })}>
+            {LANGS.map((l) => (
+              <option key={l} value={l}>
+                {LANG_NAMES[l]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
           <label htmlFor="ar-voice">{S.radio.voice}</label>
           <select id="ar-voice" className="inp" value={s.voice ?? ''} onChange={(e) => save.mutate({ voice: e.target.value || null })}>
             <option value="">
@@ -554,17 +565,6 @@ function VoiceCard({ r }: { r: Radio }) {
           value={r.settings.speechRate}
           onSave={(speechRate) => save.mutate({ speechRate })}
         />
-        <div className="field">
-          {/* biome-ignore lint/a11y/noLabelWithoutControl: caption of the segmented control below */}
-          <label>{S.radio.summaryLang}</label>
-          <select className="inp" aria-label={S.radio.summaryLang} value={s.lang} onChange={(e) => save.mutate({ lang: e.target.value })}>
-            {LANGS.map((l) => (
-              <option key={l} value={l}>
-                {LANG_NAMES[l]}
-              </option>
-            ))}
-          </select>
-        </div>
         <div className="stack" style={{ gap: 12 }}>
           <div className="row between" style={{ gap: 12 }}>
             <div style={{ fontWeight: 550 }}>{S.radio.levelsTitle}</div>
